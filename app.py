@@ -198,7 +198,7 @@ def cut_up_sonoro(audio, sr, params):
         if fragment.size > 0:
             fragments.append(fragment)
 
-    if not fragments: # Modifica: usa not fragments per controllare lista vuota
+    if len(fragments) == 0: # CORREZIONE: uso len() invece di not
         return np.array([])
 
     if reassembly == 'random':
@@ -215,10 +215,11 @@ def cut_up_sonoro(audio, sr, params):
         new_fragments = []
         start, end = 0, len(fragments) - 1
         while start <= end:
-            if len(fragments[start]) > 0 and len(new_fragments) % 2 == 0: # Modifica: aggiungi len(fragments[start]) > 0
+            # CORREZIONE PRINCIPALE: controllo di bounds e .size
+            if start < len(fragments) and fragments[start].size > 0 and len(new_fragments) % 2 == 0:
                 new_fragments.append(fragments[start])
                 start += 1
-            elif len(fragments[end]) > 0 and len(new_fragments) % 2 != 0: # Modifica: aggiungi len(fragments[end]) > 0
+            elif end < len(fragments) and fragments[end].size > 0 and len(new_fragments) % 2 != 0:
                 new_fragments.append(fragments[end])
                 end -= 1
             else: # Se il frammento è vuoto, sposta il puntatore senza aggiungere
@@ -228,7 +229,7 @@ def cut_up_sonoro(audio, sr, params):
                     end -= 1
         fragments = new_fragments
 
-    if len(fragments) > 0: # Modifica: usa len(fragments) > 0
+    if len(fragments) > 0: # CORREZIONE: uso len() invece di not
         result = np.concatenate(fragments)
     else:
         result = np.array([])
@@ -256,14 +257,15 @@ def remix_destrutturato(audio, sr, params):
         beat_times = librosa.frames_to_time(beats, sr=sr)
         cut_points = [int(t * sr) for t in beat_times if t * sr < len(audio)]
 
-    if not cut_points or (beat_preservation <= 0.5):
+    # CORREZIONE: uso len() invece di not
+    if len(cut_points) == 0 or (beat_preservation <= 0.5):
         num_cuts = int(len(audio) / fragment_samples)
         if num_cuts == 0 and len(audio) > 0:
             num_cuts = 1
         if len(audio) > 0 and num_cuts > 0:
             # Ensure start point is valid for random.sample
             valid_range_len = len(range(0, len(audio)))
-            if valid_range_len > 0: # Modifica: controlla la lunghezza di valid_range
+            if valid_range_len > 0:
                 cut_points = sorted(random.sample(range(0, len(audio)), min(num_cuts, valid_range_len)))
             else:
                 return np.array([])
@@ -271,7 +273,8 @@ def remix_destrutturato(audio, sr, params):
             return np.array([])
 
     cut_points = sorted(list(set(cut_points)))
-    if not cut_points: # Modifica: usa not cut_points
+    # CORREZIONE: uso len() in vece di not
+    if len(cut_points) == 0:
         return np.array([])
 
     if 0 not in cut_points:
@@ -312,7 +315,7 @@ def remix_destrutturato(audio, sr, params):
         if fragment.size > 0:
             fragments.append(fragment)
 
-    if not fragments: # Modifica: usa not fragments
+    if len(fragments) == 0: # CORREZIONE: uso len() invece di not
         return np.array([])
 
     if beat_preservation > 0.3:
@@ -344,7 +347,7 @@ def remix_destrutturato(audio, sr, params):
     else:
         random.shuffle(fragments)
 
-    if not fragments: # Modifica: usa not fragments
+    if len(fragments) == 0: # CORREZIONE: uso len() invece di not
         return np.array([])
 
     result = fragments[0]
@@ -437,7 +440,7 @@ def musique_concrete(audio, sr, params):
             if grain.size > 0:
                 grains.append(grain)
 
-    if not grains: # Modifica: usa not grains
+    if len(grains) == 0: # CORREZIONE: usa len() invece di not
         return np.array([])
 
     num_grains_output = int(len(grains) * texture_density)
@@ -547,7 +550,7 @@ def decostruzione_postmoderna(audio, sr, params):
             fragments.append(fragment)
             fragment_types.append('random')
 
-    if not fragments: # Modifica: usa not fragments
+    if len(fragments) == 0: # CORREZIONE: usa len() invece di not
         return np.array([])
 
     processed_fragments = []
@@ -598,13 +601,13 @@ def decostruzione_postmoderna(audio, sr, params):
         if fragment.size > 0:
             processed_fragments.append(fragment)
 
-    if not processed_fragments: # Modifica: usa not processed_fragments
+    if len(processed_fragments) == 0: # CORREZIONE: usa len() invece di not
         return np.array([])
 
     fragment_energies = [np.mean(np.abs(frag)) for frag in processed_fragments if frag.size > 0]
     processed_fragments_filtered = [frag for frag in processed_fragments if frag.size > 0]
 
-    if not processed_fragments_filtered: # Modifica: usa not processed_fragments_filtered
+    if len(processed_fragments_filtered) == 0: # CORREZIONE: usa len() invece di not
         return np.array([])
 
     sorted_indices = np.argsort(fragment_energies)
@@ -629,7 +632,7 @@ def decostruzione_postmoderna(audio, sr, params):
 
     result_fragments_final = [processed_fragments_filtered[i] for i in result_order_indices if i < len(processed_fragments_filtered)]
 
-    if len(result_fragments_final) > 0: # Modifica: usa len(result_fragments_final) > 0
+    if len(result_fragments_final) > 0:
         result = np.concatenate(result_fragments_final)
     else:
         result = np.array([])
@@ -673,7 +676,7 @@ def decomposizione_creativa(audio, sr, params):
         try:
             features_scaled = StandardScaler().fit_transform(features.T) # Trasponi per avere (n_frames, n_features)
             # Controlla che features_scaled non sia vuoto dopo lo scaling
-            if features_scaled.shape[0] == 0: # <-- CORREZIONE QUI
+            if features_scaled.shape[0] == 0:
                 st.warning("Scaled features are empty after scaling. Cannot perform KMeans clustering.")
             else:
                 # Determina il numero di cluster
@@ -743,14 +746,14 @@ def decomposizione_creativa(audio, sr, params):
     mood_fragments = {k: [f for f in v if f.size > 0] for k, v in mood_fragments.items()}
     mood_fragments = {k: v for k, v in mood_fragments.items() if v}
 
-    if not mood_fragments: # <-- CONTROLLO ROBUSTO: Se nessun frammento è stato generato o sono tutti vuoti
+    if len(mood_fragments) == 0: # CORREZIONE: Se nessun frammento è stato generato o sono tutti vuoti
         st.warning("No valid fragments generated for any mood. Returning original audio as fallback.")
         return audio
 
     result_fragments = []
     # NUOVO: Inizializza available_moods_init con un controllo esplicito
     available_moods_init = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
-    if not available_moods_init:
+    if len(available_moods_init) == 0:
         st.warning("No initial available moods with valid fragments. Returning original audio as fallback.")
         return audio
     current_mood = random.choice(available_moods_init)
@@ -816,7 +819,7 @@ def decomposizione_creativa(audio, sr, params):
     # NUOVO: Filtra eventuali frammenti vuoti nel risultato finale prima di concatenare
     result_fragments = [f for f in result_fragments if f.size > 0]
 
-    if len(result_fragments) > 0: # <-- CONTROLLO ROBUSTO
+    if len(result_fragments) > 0:
         result = np.concatenate(result_fragments)
     else:
         st.warning("No valid fragments were assembled in decomposizione_creativa. Returning original audio as fallback.")
@@ -909,7 +912,7 @@ def process_audio(audio_file, method, params):
                 if processed_channel is not None and processed_channel.size > 0:
                     processed_channels.append(processed_channel)
 
-            if not processed_channels:
+            if len(processed_channels) == 0:
                 st.error("La decomposizione ha prodotto risultati vuoti per tutti i canali.")
                 return None, None, None
 
@@ -958,7 +961,7 @@ def decompose_audio(audio, sr, method, params):
     }
 
     decompose_func = methods_map.get(method)
-    if decompose_func is None: # Modifica: usa is None
+    if decompose_func is None:
         st.error(f"Metodo {method} non riconosciuto")
         return audio
 
