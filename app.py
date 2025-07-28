@@ -55,10 +55,15 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Parametri generali
-    fragment_size = st.slider("Dimensione Frammenti (sec)", 0.1, 5.0, 1.0, 0.1)
-    chaos_level = st.slider("Livello di Chaos", 0.1, 3.0, 1.0, 0.1)
-    structure_preservation = st.slider("Conservazione Struttura", 0.0, 1.0, 0.3, 0.1)
+    # Parametri generali - più leggeri per decostruzione postmoderna
+    if decomposition_method == "decostruzione_postmoderna":
+        fragment_size = st.slider("Dimensione Frammenti (sec)", 0.5, 3.0, 1.5, 0.1)  # Frammenti più grandi
+        chaos_level = st.slider("Livello di Chaos", 0.1, 1.5, 0.8, 0.1)  # Meno chaos
+        structure_preservation = st.slider("Conservazione Struttura", 0.2, 0.8, 0.5, 0.1)  # Range più ristretto
+    else:
+        fragment_size = st.slider("Dimensione Frammenti (sec)", 0.1, 5.0, 1.0, 0.1)
+        chaos_level = st.slider("Livello di Chaos", 0.1, 3.0, 1.0, 0.1)
+        structure_preservation = st.slider("Conservazione Struttura", 0.0, 1.0, 0.3, 0.1)
 
     st.markdown("---")
 
@@ -81,9 +86,10 @@ with st.sidebar:
         texture_density = st.slider("Densità Texture", 0.1, 3.0, 1.0, 0.1)
 
     elif decomposition_method == "decostruzione_postmoderna":
-        st.subheader("Postmodern Parameters")
-        irony_level = st.slider("Livello Ironia", 0.1, 2.0, 1.0, 0.1)
-        context_shift = st.slider("Shift di Contesto", 0.1, 2.0, 1.2, 0.1)
+        st.subheader("Postmodern Parameters (Ottimizzati)")
+        irony_level = st.slider("Livello Ironia", 0.1, 1.0, 0.5, 0.1)  # Range ridotto
+        context_shift = st.slider("Shift di Contesto", 0.1, 1.0, 0.6, 0.1)  # Range ridotto
+        st.info("🔧 Parametri ottimizzati per prestazioni migliori")
 
     elif decomposition_method == "decomposizione_creativa":
         st.subheader("Creative Parameters")
@@ -511,9 +517,9 @@ def musique_concrete(audio, sr, params):
     return result
 
 def decostruzione_postmoderna(audio, sr, params):
-    """Decostruzione ironica e postmoderna del brano - Versione robusta"""
-    irony_level = params.get('irony_level', 1.0)
-    context_shift = params.get('context_shift', 1.2)
+    """Decostruzione postmoderna ottimizzata e più leggera"""
+    irony_level = params.get('irony_level', 0.5)  # Valore più basso di default
+    context_shift = params.get('context_shift', 0.6)  # Valore più basso di default
     fragment_size = params['fragment_size']
 
     if audio.size == 0:
@@ -524,352 +530,200 @@ def decostruzione_postmoderna(audio, sr, params):
         return audio
 
     try:
-        # Calcolo energia con controlli di sicurezza
-        hop_length = 512
-        energy = np.array([])
+        # Versione semplificata dell'analisi dell'energia
+        # Usiamo solo RMS semplice, no frame analysis complessa
+        window_size = min(1024, len(audio) // 10)  # Finestra più piccola
+        if window_size <= 0:
+            window_size = min(512, len(audio))
         
-        if len(audio) >= hop_length:
-            try:
-                energy = librosa.feature.rms(y=audio, hop_length=hop_length)[0]
-            except Exception as e:
-                st.warning(f"RMS calculation failed: {e}")
-                # Fallback: usa energia semplice
-                num_frames = len(audio) // hop_length
-                if num_frames > 0:
-                    energy = np.array([np.sqrt(np.mean(audio[i*hop_length:(i+1)*hop_length]**2)) 
-                                       for i in range(num_frames)])
+        if window_size > len(audio):
+            # Audio troppo corto, trattalo come un singolo frammento
+            fragments = [audio]
+            fragment_types = ['important']
+        else:
+            # Calcola energia in modo semplificato
+            num_windows = len(audio) // window_size
+            energy_values = []
+            
+            for i in range(num_windows):
+                start_idx = i * window_size
+                end_idx = min(start_idx + window_size, len(audio))
+                window_audio = audio[start_idx:end_idx]
+                
+                if window_audio.size > 0:
+                    energy = np.sqrt(np.mean(window_audio**2))
+                    energy_values.append((energy, start_idx))
 
-        # Identifica frame importanti
-        important_frames = np.array([])
-        if energy.size > 0:
-            energy_threshold = np.percentile(energy, 70)
-            important_frames = np.where(energy > energy_threshold)[0]
+            # Identifica solo alcuni punti ad alta energia (max 8 per limitare complessità)
+            max_important_fragments = min(8, len(energy_values))
+            if energy_values:
+                energy_values.sort(key=lambda x: x[0], reverse=True)
+                important_starts = [start for _, start in energy_values[:max_important_fragments]]
+            else:
+                important_starts = []
 
-        # Converti frame in tempi
-        important_times = np.array([])
-        if important_frames.size > 0:
-            important_times = librosa.frames_to_time(important_frames, sr=sr, hop_length=hop_length)
+            # Crea frammenti
+            fragments = []
+            fragment_types = []
 
-        fragments = []
-        fragment_types = []
+            # Frammenti importanti (limitati)
+            for start_sample in important_starts:
+                end_sample = min(start_sample + fragment_samples, len(audio))
+                if end_sample > start_sample:
+                    fragment = audio[start_sample:end_sample]
+                    if fragment.size > 0:
+                        fragments.append(fragment)
+                        fragment_types.append('important')
 
-        # Estrai frammenti importanti
-        for t in important_times:
-            start_sample = int(t * sr)
-            end_sample = min(start_sample + fragment_samples, len(audio))
-
-            if end_sample > start_sample:
-                fragment = audio[start_sample:end_sample]
+            # Aggiungi solo alcuni frammenti casuali (max 6)
+            max_random_fragments = min(6, max(1, int(len(fragments) * 0.5)))
+            for _ in range(max_random_fragments):
+                if len(audio) >= fragment_samples:
+                    max_start = len(audio) - fragment_samples
+                    if max_start > 0:
+                        start = random.randint(0, max_start)
+                        fragment = audio[start:start + fragment_samples]
+                    else:
+                        fragment = audio.copy()
+                else:
+                    fragment = audio.copy()
+                
                 if fragment.size > 0:
                     fragments.append(fragment)
-                    fragment_types.append('important')
-
-        # Aggiungi frammenti casuali
-        num_random = max(1, int(len(fragments) * 0.5))  # Almeno 1 frammento
-        for _ in range(num_random):
-            if len(audio) < fragment_samples:
-                # Se l'audio è più corto del frammento, prendi tutto
-                fragment = audio.copy()
-            else:
-                start = random.randint(0, len(audio) - fragment_samples)
-                fragment = audio[start:start + fragment_samples]
-            
-            if fragment.size > 0:
-                fragments.append(fragment)
-                fragment_types.append('random')
+                    fragment_types.append('random')
 
         if len(fragments) == 0:
-            return audio  # Fallback all'originale se non ci sono frammenti
+            return audio
 
-        # Processa frammenti con transformazioni ironiche
+        # Processa frammenti con trasformazioni più leggere
         processed_fragments = []
+        
         for i, (fragment, frag_type) in enumerate(zip(fragments, fragment_types)):
             if fragment.size == 0:
                 continue
 
-            # Transformazioni ironiche per frammenti importanti
-            if frag_type == 'important' and random.random() < irony_level / 2.0:
-                ironic_transforms = [
-                    # Inversione temporale
-                    lambda x: x[::-1] if x.size > 0 else np.array([]),
-                    # Pitch shift verso il basso (meno aggressivo)
-                    lambda x: safe_pitch_shift(x, sr, -6) if x.size > 0 else np.array([]),
-                    # Time stretch più conservativo
-                    lambda x: safe_time_stretch(x, 0.5) if x.size > 0 else np.array([]),
-                    # Riduzione volume
-                    lambda x: x * 0.2 if x.size > 0 else np.array([]),
-                    # Ripetizione controllata (max 3 volte per evitare OOM)
-                    lambda x: np.tile(x[:min(len(x)//3, 2000)] if len(x) > 0 else np.array([]), 3) if len(x) > 0 else np.array([]),
-                ]
-                
-                transform = random.choice(ironic_transforms)
-                try:
-                    transformed_fragment = transform(fragment)
-                    if transformed_fragment.size > 0:
-                        fragment = transformed_fragment
-                    else:
-                        st.warning(f"Ironic transform produced empty fragment. Keeping original.")
-                except Exception as e:
-                    st.warning(f"Ironic transform failed: {e}. Keeping original.")
+            processed_frag = fragment.copy()
 
-            # Context shift effects
-            if fragment.size > 0 and random.random() < context_shift / 2.0:
-                context_effects = [
-                    # Pitch shift più conservativo
-                    lambda x: safe_pitch_shift(x, sr, random.uniform(-3, 3)) if x.size > 0 else np.array([]),
-                    # Fade in
-                    lambda x: x * np.linspace(0, 1, len(x)) if len(x) > 0 else np.array([]),
-                    # Fade out
-                    lambda x: x * np.linspace(1, 0, len(x)) if len(x) > 0 else np.array([]),
-                    # Rumore controllato
-                    lambda x: x + np.random.normal(0, 0.02, len(x)) if len(x) > 0 else np.array([]),
-                ]
+            # Trasformazioni ironiche semplificate (meno probabilità, meno aggressive)
+            if frag_type == 'important' and random.random() < irony_level * 0.4:  # Ridotta probabilità
+                transform_choice = random.choice([
+                    'reverse',      # Inversione temporale (veloce)
+                    'volume_down',  # Riduzione volume (veloce)
+                    'fade_out'      # Fade out (veloce)
+                ])
                 
-                effect = random.choice(context_effects)
                 try:
-                    effected_fragment = effect(fragment)
-                    if effected_fragment.size > 0:
-                        fragment = effected_fragment
-                    else:
-                        st.warning(f"Context shift effect produced empty fragment. Keeping original.")
+                    if transform_choice == 'reverse':
+                        processed_frag = processed_frag[::-1]
+                    elif transform_choice == 'volume_down':
+                        processed_frag = processed_frag * 0.3
+                    elif transform_choice == 'fade_out':
+                        fade = np.linspace(1, 0.2, len(processed_frag))
+                        processed_frag = processed_frag * fade
+                        
                 except Exception as e:
-                    st.warning(f"Context shift effect failed: {e}. Keeping original.")
+                    st.warning(f"Trasformazione ironica fallita: {e}")
+                    processed_frag = fragment
 
-            if fragment.size > 0:
-                processed_fragments.append(fragment)
+            # Context shift più leggero
+            if processed_frag.size > 0 and random.random() < context_shift * 0.3:  # Ridotta probabilità
+                effect_choice = random.choice([
+                    'fade_in',    # Fade in (veloce)
+                    'light_noise' # Rumore leggero (veloce)
+                ])
+                
+                try:
+                    if effect_choice == 'fade_in':
+                        fade = np.linspace(0.3, 1, len(processed_frag))
+                        processed_frag = processed_frag * fade
+                    elif effect_choice == 'light_noise':
+                        noise_level = 0.01  # Molto leggero
+                        noise = np.random.normal(0, noise_level, len(processed_frag))
+                        processed_frag = processed_frag + noise
+                        
+                except Exception as e:
+                    st.warning(f"Context shift fallito: {e}")
+                    processed_frag = fragment
+
+            if processed_frag.size > 0:
+                processed_fragments.append(processed_frag)
 
         if len(processed_fragments) == 0:
-            return audio  # Fallback all'originale
+            return audio
 
-        # Calcola energie dei frammenti processati
-        fragment_energies = []
-        processed_fragments_filtered = []
+        # Riassemblaggio semplificato - senza sorting complesso per energia
+        # Semplicemente mescola e concatena
+        random.shuffle(processed_fragments)
         
-        for frag in processed_fragments:
-            if frag.size > 0:
-                energy_val = np.mean(np.abs(frag))
-                if not np.isnan(energy_val) and not np.isinf(energy_val):
-                    fragment_energies.append(energy_val)
-                    processed_fragments_filtered.append(frag)
+        # Limita il numero di frammenti per evitare audio troppo lunghi
+        max_final_fragments = min(12, len(processed_fragments))
+        final_fragments = processed_fragments[:max_final_fragments]
 
-        if len(processed_fragments_filtered) == 0:
-            return audio  # Fallback all'originale
-
-        # Ordina per energia
-        if len(fragment_energies) > 0:
-            sorted_indices = np.argsort(fragment_energies)
-            
-            # Dividi in alta e bassa energia
-            mid_point = len(sorted_indices) // 2
-            low_energy = sorted_indices[:mid_point]
-            high_energy = sorted_indices[mid_point:]
-            
-            # Crea ordine alternato
-            result_order_indices = []
-            max_pairs = min(len(low_energy), len(high_energy))
-            
-            for i in range(max_pairs):
-                if random.random() < 0.6:  # Preferenza per alta energia
-                    result_order_indices.append(high_energy[i])
-                result_order_indices.append(low_energy[i])
-            
-            # Aggiungi rimanenti
-            if len(high_energy) > max_pairs:
-                result_order_indices.extend(high_energy[max_pairs:])
-            if len(low_energy) > max_pairs:
-                result_order_indices.extend(low_energy[max_pairs:])
-            
-            random.shuffle(result_order_indices) # Aggiunge un tocco di casualità all'ordine finale
-            
-            final_fragments = [processed_fragments_filtered[i] for i in result_order_indices]
-        else:
-            final_fragments = processed_fragments_filtered # Nessuna energia per ordinare, usa filtrati
-
-
-        # Riassembla con crossfades per fluidità postmoderna
+        # Concatenazione con crossfade più semplice
         if len(final_fragments) == 0:
-            return audio # Fallback all'originale
+            return audio
 
-        result_audio = np.array([])
-        fade_duration = int(sr * 0.05) # 50 ms fade
+        result_audio = final_fragments[0]
+        fade_duration = int(sr * 0.02)  # Fade più breve (20ms)
 
-        for i, frag in enumerate(final_fragments):
+        for frag in final_fragments[1:]:
             if frag.size == 0:
                 continue
 
             if result_audio.size == 0:
                 result_audio = frag
+                continue
+
+            # Crossfade semplificato
+            current_fade = min(fade_duration, result_audio.size, frag.size)
+            
+            if current_fade > 0:
+                # Fade out per l'audio esistente
+                fade_out = np.linspace(1, 0, current_fade)
+                # Fade in per il nuovo frammento
+                fade_in = np.linspace(0, 1, current_fade)
+                
+                # Applica il crossfade
+                overlap_existing = result_audio[-current_fade:] * fade_out
+                overlap_new = frag[:current_fade] * fade_in
+                crossfaded = overlap_existing + overlap_new
+                
+                # Concatena: parte precedente + crossfade + resto del nuovo frammento
+                result_audio = np.concatenate([
+                    result_audio[:-current_fade],
+                    crossfaded,
+                    frag[current_fade:]
+                ])
             else:
-                overlap_samples = min(fade_duration, result_audio.size, frag.size)
-                if overlap_samples > 0:
-                    crossfade_out = np.linspace(1, 0, overlap_samples)
-                    crossfade_in = np.linspace(0, 1, overlap_samples)
-                    
-                    overlap_section_result = result_audio[-overlap_samples:]
-                    overlap_section_frag = frag[:overlap_samples]
-                    
-                    crossfaded_section = overlap_section_result * crossfade_out + overlap_section_frag * crossfade_in
-                    
-                    result_audio = np.concatenate([result_audio[:-overlap_samples], crossfaded_section, frag[overlap_samples:]])
-                else:
-                    result_audio = np.concatenate([result_audio, frag])
-        
-        # Normalizza il risultato finale
+                # Se non è possibile fare crossfade, concatena direttamente
+                result_audio = np.concatenate([result_audio, frag])
+
+        # Normalizzazione finale e pulizia
         if result_audio.size > 0:
-            result_audio = librosa.util.normalize(result_audio)
-        else:
-            return np.array([]) # Se il risultato è vuoto, restituisci un array vuoto
-        
+            # Rimuovi eventuali NaN o Inf
+            result_audio = np.nan_to_num(result_audio, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Normalizza se necessario
+            max_val = np.max(np.abs(result_audio))
+            if max_val > 0:
+                result_audio = result_audio / max_val * 0.8
+            else:
+                result_audio = np.array([])
+
         return result_audio
 
     except Exception as e:
-        st.error(f"Errore durante la decostruzione postmoderna: {e}. Trace: {traceback.format_exc()}")
-        return audio # Fallback all'originale in caso di errore grave
+        st.error(f"Errore in decostruzione_postmoderna: {e}")
+        st.error(f"Traceback: {traceback.format_exc()}")
+        return audio  # Ritorna l'audio originale in caso di errore
 
 
 def decomposizione_creativa(audio, sr, params):
-    """Scompone e ricompone in modo 'creativo' usando clustering e manipolazione dinamica."""
+    """Decomposizione creativa con focus su discontinuità e shift emotivi"""
     fragment_size = params['fragment_size']
-    chaos_level = params['chaos_level']
     discontinuity = params.get('discontinuity', 1.0)
     emotional_shift = params.get('emotional_shift', 0.8)
-
-    if audio.size == 0:
-        return np.array([])
-
-    fragment_samples = int(fragment_size * sr)
-    if fragment_samples <= 0:
-        return audio
-
-    fragments = []
-    # Assicurati che il loop sia valido
-    for i in range(0, len(audio) - fragment_samples + 1, fragment_samples):
-        fragment = audio[i:i + fragment_samples]
-        if fragment.size > 0:
-            fragments.append(fragment)
-
-    if len(fragments) == 0:
-        return np.array([])
-
-    # Estrai feature per clustering (es. MFCC)
-    feature_vectors = []
-    original_indices = []
-    for i, frag in enumerate(fragments):
-        if frag.size > 0:
-            try:
-                # Pad o tronca il frammento per avere una dimensione fissa per MFCC
-                # Questo è cruciale per K-Means che richiede input di dimensione costante
-                mfcc_length = int(sr * 0.1) # Una lunghezza fissa, es. 0.1 secondi di audio
-                if len(frag) < mfcc_length:
-                    padded_frag = np.pad(frag, (0, mfcc_length - len(frag)))
-                else:
-                    padded_frag = frag[:mfcc_length]
-                    
-                mfcc = librosa.feature.mfcc(y=padded_frag, sr=sr, n_mfcc=13)
-                if mfcc.size > 0:
-                    feature_vectors.append(np.mean(mfcc, axis=1)) # Media delle MFCC per il frammento
-                    original_indices.append(i)
-            except Exception as e:
-                st.warning(f"Errore estrazione MFCC per frammento {i}: {e}. Salto il frammento.")
-                # Continua con il prossimo frammento, non aggiungere questo ai feature_vectors
-
-    if len(feature_vectors) == 0:
-        return np.array([]) # Se nessuna feature valida, non possiamo procedere
-
-    # Normalizzazione feature
-    scaler = StandardScaler()
-    scaled_features = scaler.fit_transform(feature_vectors)
-
-    # Clustering K-Means
-    num_clusters = min(len(scaled_features), max(2, int(len(fragments) * structure_preservation * 0.5))) # Almeno 2 cluster
-    if num_clusters < 2:
-        return np.concatenate(fragments) # Se non abbastanza cluster, riassemblo in ordine
-    
-    kmeans = KMeans(n_clusters=num_clusters, random_state=0, n_init='auto')
-    try:
-        clusters = kmeans.fit_predict(scaled_features)
-    except Exception as e:
-        st.warning(f"Errore nel clustering KMeans: {e}. Riassemblaggio sequenziale.")
-        return np.concatenate(fragments) # Fallback
-
-    clustered_fragments = [[] for _ in range(num_clusters)]
-    for i, cluster_idx in enumerate(clusters):
-        # Usa original_indices per mappare correttamente al frammento originale
-        clustered_fragments[cluster_idx].append(fragments[original_indices[i]])
-
-    # Riassemblaggio e manipolazione
-    recomposed_audio = []
-    for cluster_idx in range(num_clusters):
-        cluster_frags = clustered_fragments[cluster_idx]
-        if len(cluster_frags) == 0:
-            continue
-
-        # Applica manipolazioni al cluster
-        if random.random() < discontinuity: # Maggiore discontinuità = più manipolazioni
-            if random.random() < emotional_shift: # Pitch shift o time stretch
-                manipulated_frags = []
-                for frag in cluster_frags:
-                    if frag.size > 0:
-                        if random.random() < 0.5:
-                            shift = random.uniform(-6, 6) # Pitch shift emotivo
-                            frag = safe_pitch_shift(frag, sr, shift)
-                        else:
-                            stretch_rate = random.uniform(0.7, 1.3) # Time stretch emotivo
-                            frag = safe_time_stretch(frag, stretch_rate)
-                        if frag.size > 0:
-                            manipulated_frags.append(frag)
-                cluster_frags = manipulated_frags
-
-            if random.random() < chaos_level / 2.0: # Inversione o randomizzazione
-                if random.random() < 0.5:
-                    cluster_frags = [f[::-1] for f in cluster_frags if f.size > 0] # Inverti frammenti
-                random.shuffle(cluster_frags) # Randomizza ordine all'interno del cluster
-
-        # Concatena i frammenti del cluster (con crossfade)
-        if len(cluster_frags) > 0:
-            current_cluster_audio = np.array([])
-            fade_duration_samples = int(sr * 0.02) # Breve crossfade
-
-            for frag in cluster_frags:
-                if frag.size == 0:
-                    continue
-                if current_cluster_audio.size == 0:
-                    current_cluster_audio = frag
-                else:
-                    overlap = min(fade_duration_samples, current_cluster_audio.size, frag.size)
-                    if overlap > 0:
-                        crossfade_out = np.linspace(1, 0, overlap)
-                        crossfade_in = np.linspace(0, 1, overlap)
-                        
-                        current_cluster_audio = np.concatenate([
-                            current_cluster_audio[:-overlap],
-                            (current_cluster_audio[-overlap:] * crossfade_out + frag[:overlap] * crossfade_in),
-                            frag[overlap:]
-                        ])
-                    else:
-                        current_cluster_audio = np.concatenate([current_cluster_audio, frag])
-            if current_cluster_audio.size > 0:
-                recomposed_audio.append(current_cluster_audio)
-
-    if len(recomposed_audio) == 0:
-        return np.array([])
-
-    # Riassembla i cluster (randomizzando l'ordine dei cluster per "discontinuità")
-    random.shuffle(recomposed_audio)
-    final_audio = np.concatenate(recomposed_audio)
-
-    # Normalizza il risultato finale
-    if final_audio.size > 0:
-        final_audio = librosa.util.normalize(final_audio)
-    else:
-        return np.array([])
-
-    return final_audio
-
-def random_chaos(audio, sr, params):
-    """Applica manipolazioni estreme e casuali per un output imprevedibile."""
     chaos_level = params['chaos_level']
-    fragment_size = params['fragment_size']
 
     if audio.size == 0:
         return np.array([])
@@ -878,332 +732,283 @@ def random_chaos(audio, sr, params):
     if fragment_samples <= 0:
         return audio
 
+    # Analizza struttura audio
+    structure = analyze_audio_structure(audio, sr)
+    
+    # Crea punti di taglio basati su onset e energia
+    cut_points = []
+    if structure['onset_times'].size > 0:
+        onset_samples = [int(t * sr) for t in structure['onset_times'] if t * sr < len(audio)]
+        cut_points.extend(onset_samples)
+    
+    # Aggiungi punti casuali per aumentare discontinuità
+    num_random_cuts = int(discontinuity * len(audio) / fragment_samples)
+    if num_random_cuts > 0 and len(audio) > fragment_samples:
+        random_cuts = random.sample(range(0, len(audio) - fragment_samples), 
+                                  min(num_random_cuts, len(audio) - fragment_samples))
+        cut_points.extend(random_cuts)
+    
+    # Ordina e rimuovi duplicati
+    cut_points = sorted(list(set(cut_points)))
+    if 0 not in cut_points:
+        cut_points.insert(0, 0)
+    if len(audio) not in cut_points:
+        cut_points.append(len(audio))
+    
+    # Crea frammenti
     fragments = []
-    # Suddividi l'audio in frammenti
-    for i in range(0, len(audio) - fragment_samples + 1, fragment_samples):
-        fragment = audio[i:i + fragment_samples]
-        if fragment.size > 0:
-            fragments.append(fragment)
-
+    for i in range(len(cut_points) - 1):
+        start = cut_points[i]
+        end = cut_points[i + 1]
+        if end > start:
+            fragment = audio[start:end]
+            if fragment.size > 0:
+                fragments.append(fragment)
+    
     if len(fragments) == 0:
-        return np.array([])
-
+        return audio
+    
+    # Applica trasformazioni emotive
     processed_fragments = []
-    for frag in fragments:
-        if frag.size == 0:
+    for fragment in fragments:
+        if fragment.size == 0:
             continue
-
-        # Applica manipolazioni basate sul livello di chaos
-        if random.random() < chaos_level * 0.3: # Inversione casuale
-            frag = frag[::-1]
-
-        if random.random() < chaos_level * 0.4: # Pitch shift estremo
-            shift = random.uniform(-24, 24) # Due ottave su o giù
-            frag = safe_pitch_shift(frag, sr, shift)
-
-        if frag.size > 0 and random.random() < chaos_level * 0.4: # Time stretch/compress estremo
-            stretch_rate = random.uniform(0.1, 10.0) # Molto lento o molto veloce
-            frag = safe_time_stretch(frag, stretch_rate)
+            
+        processed_frag = fragment.copy()
         
-        if frag.size > 0 and random.random() < chaos_level * 0.2: # Aggiungi rumore
-            noise = np.random.normal(0, np.max(np.abs(frag)) * random.uniform(0.05, 0.2), len(frag))
-            frag = frag + noise
-
-        if frag.size > 0 and random.random() < chaos_level * 0.1: # Distorsione (semplice clipping)
-            clip_threshold = random.uniform(0.3, 0.8)
-            frag = np.clip(frag, -clip_threshold, clip_threshold)
-
-        if frag.size > 0:
-            processed_fragments.append(frag)
-
-    if len(processed_fragments) == 0:
-        return np.array([])
-
-    random.shuffle(processed_fragments) # Randomizza l'ordine dei frammenti
-
-    # Riassemblaggio con crossfade
-    final_audio = np.array([])
-    fade_duration = int(sr * 0.05) # 50 ms crossfade
-
-    for i, frag in enumerate(processed_fragments):
-        if frag.size == 0:
-            continue
-        if final_audio.size == 0:
-            final_audio = frag
-        else:
-            overlap = min(fade_duration, final_audio.size, frag.size)
-            if overlap > 0:
-                crossfade_out = np.linspace(1, 0, overlap)
-                crossfade_in = np.linspace(0, 1, overlap)
+        # Shift emotivo attraverso pitch e tempo
+        if random.random() < emotional_shift:
+            try:
+                # Pitch shift per cambiare "mood"
+                pitch_change = random.uniform(-5, 5) * emotional_shift
+                processed_frag = safe_pitch_shift(processed_frag, sr, pitch_change)
                 
-                final_audio = np.concatenate([
-                    final_audio[:-overlap],
-                    (final_audio[-overlap:] * crossfade_out + frag[:overlap] * crossfade_in),
-                    frag[overlap:]
+                if processed_frag.size > 0:
+                    # Time stretch per cambiare "energia"
+                    time_change = random.uniform(0.7, 1.4) * (1 + emotional_shift * 0.3)
+                    processed_frag = safe_time_stretch(processed_frag, time_change)
+                    
+            except Exception as e:
+                st.warning(f"Trasformazione emotiva fallita: {e}")
+                processed_frag = fragment
+        
+        # Discontinuità attraverso manipolazioni aggressive
+        if processed_frag.size > 0 and random.random() < discontinuity * 0.5:
+            transform_type = random.choice(['reverse', 'stutter', 'gate', 'distort'])
+            
+            try:
+                if transform_type == 'reverse':
+                    processed_frag = processed_frag[::-1]
+                elif transform_type == 'stutter':
+                    # Ripeti sezioni brevi
+                    stutter_size = min(int(0.1 * sr), processed_frag.size // 4)
+                    if stutter_size > 0:
+                        stutter_section = processed_frag[:stutter_size]
+                        processed_frag = np.concatenate([stutter_section] * 3 + [processed_frag])
+                elif transform_type == 'gate':
+                    # Gating rhythmico
+                    gate_freq = random.uniform(8, 32)  # Hz
+                    gate_pattern = np.sin(2 * np.pi * gate_freq * np.arange(len(processed_frag)) / sr)
+                    gate_pattern = (gate_pattern > 0).astype(float) * 0.8 + 0.2
+                    processed_frag = processed_frag * gate_pattern
+                elif transform_type == 'distort':
+                    # Distorsione soft
+                    drive = 1 + discontinuity * 2
+                    processed_frag = np.tanh(processed_frag * drive) / drive
+                    
+            except Exception as e:
+                st.warning(f"Trasformazione di discontinuità fallita: {e}")
+                processed_frag = fragment
+        
+        if processed_frag.size > 0:
+            processed_fragments.append(processed_frag)
+    
+    if len(processed_fragments) == 0:
+        return audio
+    
+    # Riassemblaggio creativo
+    random.shuffle(processed_fragments)
+    
+    # Concatenazione con variazioni dinamiche
+    result_audio = processed_fragments[0]
+    
+    for frag in processed_fragments[1:]:
+        if frag.size == 0 or result_audio.size == 0:
+            continue
+            
+        # Varia il tipo di transizione
+        transition_type = random.choice(['crossfade', 'cut', 'overlap'])
+        
+        if transition_type == 'crossfade':
+            fade_duration = int(sr * random.uniform(0.01, 0.1))
+            current_fade = min(fade_duration, result_audio.size, frag.size)
+            
+            if current_fade > 0:
+                fade_out = np.linspace(1, 0, current_fade)
+                fade_in = np.linspace(0, 1, current_fade)
+                
+                overlap_existing = result_audio[-current_fade:] * fade_out
+                overlap_new = frag[:current_fade] * fade_in
+                crossfaded = overlap_existing + overlap_new
+                
+                result_audio = np.concatenate([
+                    result_audio[:-current_fade],
+                    crossfaded,
+                    frag[current_fade:]
                 ])
             else:
-                final_audio = np.concatenate([final_audio, frag])
+                result_audio = np.concatenate([result_audio, frag])
+                
+        elif transition_type == 'cut':
+            # Taglio netto
+            result_audio = np.concatenate([result_audio, frag])
+            
+        elif transition_type == 'overlap':
+            # Sovrapposizione additiva
+            overlap_duration = int(sr * random.uniform(0.02, 0.08))
+            current_overlap = min(overlap_duration, result_audio.size, frag.size)
+            
+            if current_overlap > 0:
+                # Sovrapposizione con volume ridotto
+                overlap_existing = result_audio[-current_overlap:] * 0.6
+                overlap_new = frag[:current_overlap] * 0.6
+                overlapped = overlap_existing + overlap_new
+                
+                result_audio = np.concatenate([
+                    result_audio[:-current_overlap],
+                    overlapped,
+                    frag[current_overlap:]
+                ])
+            else:
+                result_audio = np.concatenate([result_audio, frag])
+    
+    # Normalizzazione finale
+    if result_audio.size > 0:
+        result_audio = np.nan_to_num(result_audio, nan=0.0, posinf=0.0, neginf=0.0)
+        max_val = np.max(np.abs(result_audio))
+        if max_val > 0:
+            result_audio = result_audio / max_val * 0.8
+    
+    return result_audio
 
-    # Normalizza il risultato finale
-    if final_audio.size > 0:
-        final_audio = librosa.util.normalize(final_audio)
-    else:
+
+def random_chaos(audio, sr, params):
+    """Generatore di chaos totale - ogni esecuzione è completamente diversa"""
+    if audio.size == 0:
         return np.array([])
-
-    return final_audio
-
-
-def generate_analysis_text(original_structure, decomposed_audio, sr, method, params):
-    """Genera un'analisi testuale dettagliata del processo di decomposizione."""
-    analysis = f"## Analisi della Decomposizione\n\n"
-    analysis += f"**Metodo Selezionato:** {method.replace('_', ' ').title()}\n"
     
-    # Gestione robusta della durata originale
-    original_duration = 0
-    if 'audio' in original_structure and original_structure['audio'] is not None and original_structure['audio'].size > 0:
-        original_duration = len(original_structure['audio']) / sr
-    analysis += f"**Durata Originale:** {original_duration:.2f} secondi\n"
+    chaos_level = params['chaos_level']
+    fragment_size = params['fragment_size']
     
-    analysis += f"**Durata Decomposta:** {len(decomposed_audio) / sr:.2f} secondi\n\n"
-
-    analysis += "### Parametri Utilizzati:\n"
-    for key, value in params.items():
-        analysis += f"- **{key.replace('_', ' ').title()}:** {value}\n"
-    analysis += "\n"
-
-    analysis += "### Dettagli Strutturali Originali:\n"
-    # Modifica per gestire robustamente il tempo
-    tempo_val = original_structure.get('tempo', 0)
-    if np.isscalar(tempo_val): # Ensure it's a scalar before checking > 0 or formatting
-        if tempo_val > 0:
-            analysis += f"- **Tempo (BPM):** {tempo_val:.2f}\n"
-        else:
-            analysis += f"- **Tempo (BPM):** Non rilevato o 0 BPM\n"
-    else:
-        analysis += f"- **Tempo (BPM):** Dati non disponibili (potrebbe essere un array)\n"
-
-    if original_structure['beats'].size > 0:
-        analysis += f"- **Battiti Rilevati:** {len(original_structure['beats'])}\n"
-    if original_structure['onset_times'].size > 0:
-        analysis += f"- **Eventi di Attacco Rilevati:** {len(original_structure['onset_times'])}\n"
-    if original_structure['chroma'].size > 0:
-        analysis += f"- **Armonia (Chroma Features):** Presente e analizzata.\n"
-    if original_structure['mfcc'].size > 0:
-        analysis += f"- **Timbro (MFCC):** Presente e analizzato.\n"
-    if original_structure['spectral_centroids'].size > 0:
-        analysis += f"- **Brillantezza Spettrale (Spectral Centroid):** Presente e analizzata.\n"
-    analysis += "\n"
-
-    analysis += "### Impatto del Metodo di Decomposizione:\n"
-
-    if method == "cut_up_sonoro":
-        analysis += (
-            f"Il metodo 'Cut-up Sonoro' ha segmentato il brano in frammenti di circa {params['fragment_size']:.1f} secondi. "
-            f"Con una casualità dei tagli del {params.get('cut_randomness', 0.7)*100:.0f}%, molti frammenti sono stati manipolati (es. accorciati, allungati, invertiti). "
-            f"Lo stile di riassemblaggio '{params.get('reassembly_style', 'random').replace('_', ' ').title()}' ha determinato l'ordine finale, creando una narrazione sonora frammentata e disorientante, tipica della tecnica di William S. Burroughs."
-        )
-    elif method == "remix_destrutturato":
-        analysis += (
-            f"Il 'Remix Destrutturato' ha cercato di mantenere un legame con la struttura originale del brano. "
-            f"Con una conservazione del ritmo del {params.get('beat_preservation', 0.4)*100:.0f}%, alcuni punti di battito sono stati rispettati, "
-            f"mentre la frammentazione della melodia ({params.get('melody_fragmentation', 1.5):.1f}x) ha introdotto alterazioni di pitch e tempo. "
-            f"Questo ha generato un'esperienza familiare ma allo stesso tempo alienata, dove elementi riconoscibili emergono in un contesto nuovo e inaspettato."
-        )
-    elif method == "musique_concrete":
-        analysis += (
-            f"La tecnica 'Musique Concrète' ha trasformato l'audio in grani minuscoli (circa {params.get('grain_size', 0.1):.2f} secondi). "
-            f"La densità della texture ({params.get('texture_density', 1.0):.1f}x) ha influenzato il numero di grani sovrapposti. "
-            f"Il livello di chaos ({params['chaos_level']:.1f}x) ha introdotto manipolazioni estreme come inversioni, pitch shift e time stretch, "
-            f"creando un paesaggio sonoro astratto, focalizzato sulle qualità intrinseche del suono piuttosto che sulla sua origine musicale."
-        )
-    elif method == "decostruzione_postmoderna":
-        analysis += (
-            f"La 'Decostruzione Postmoderna' ha analizzato l'energia del brano per identificare frammenti 'importanti' e li ha posti in dialogo con frammenti casuali. "
-            f"Il livello di ironia ({params.get('irony_level', 1.0):.1f}x) ha portato a manipolazioni come inversioni, pitch shift bassi o riduzioni di volume sui momenti chiave, "
-            f"mentre lo 'shift di contesto' ({params.get('context_shift', 1.2):.1f}x) ha applicato dissolvenze, rumori o leggere alterazioni di pitch. "
-            f"Il risultato è una rilettura critica e spesso surreale dell'originale, che ne svela le convenzioni e ne esplora nuove interpretazioni."
-        )
-    elif method == "decomposizione_creativa":
-        analysis += (
-            f"La 'Decomposizione Creativa' ha utilizzato tecniche di apprendimento automatico (K-Means Clustering) per raggruppare frammenti con caratteristiche timbriche simili. "
-            f"Successivamente, ha applicato manipolazioni dinamiche e casuali a questi cluster, influenzate dai parametri di discontinuità ({params.get('discontinuity', 1.0):.1f}x) "
-            f"e shift emotivo ({params.get('emotional_shift', 0.8):.1f}x). "
-            f"Questo ha permesso di esplorare nuove relazioni tra le parti del brano, generando un'opera che bilancia coesione tematica e frammentazione sonora."
-        )
-    elif method == "random_chaos":
-        analysis += (
-            f"Il metodo 'Random Chaos' ha applicato manipolazioni estreme e imprevedibili a ogni frammento del brano, "
-            f"guidato principalmente dal livello di chaos ({params['chaos_level']:.1f}x). "
-            f"Ogni frammento ha subito trasformazioni radicali come inversione, pitch shift e time stretch estremi, aggiunta di rumore e distorsione. "
-            f"Il riassemblaggio casuale ha eliminato ogni traccia della struttura originale, risultando in un'esperienza sonora densa, imprevedibile e completamente astratta."
-        )
-    else:
-        analysis += "Nessun impatto specifico descritto per il metodo selezionato."
-
-    analysis += "\n\n**Nota:** Le durate possono variare leggermente a causa delle manipolazioni di time-stretching e riassemblaggio che modificano la lunghezza complessiva dell'audio."
-
-    return analysis
-
-# Placeholder per i risultati
-processed_audio_data = None
-original_sr = None
-original_audio_info = None
-# Aggiunti per le waveform originali
-original_audio_data_for_plot = None
-original_sr_for_plot = None
-
-
-if uploaded_file is not None:
-    st.audio(uploaded_file, format=uploaded_file.type, start_time=0)
-
-    # Pulsante per avviare la decomposizione
-    if st.button("DECOMPONI E RICOMPONI", type="primary"):
-        with st.spinner("Decomposizione in corso... potrebbe richiedere del tempo per brani lunghi."):
-            try:
-                # Carica audio usando tempfile per gestire i vari formati
-                with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    tmp_file_path = tmp_file.name
-
-                audio, sr = librosa.load(tmp_file_path, sr=None, mono=True) # sr=None per mantenere sample rate originale
-                os.remove(tmp_file_path) # Pulisci il file temporaneo
-
-                if audio.size == 0:
-                    st.error("Il file audio caricato è vuoto o non valido.")
-                else:
-                    # Salva l'audio originale e il sample rate per la visualizzazione e l'analisi
-                    original_audio_data_for_plot = audio.copy()
-                    original_sr_for_plot = sr
-
-                    # Raccogli i parametri specifici del metodo
-                    params = {
-                        'fragment_size': fragment_size,
-                        'chaos_level': chaos_level,
-                        'structure_preservation': structure_preservation,
-                    }
-                    if decomposition_method == "cut_up_sonoro":
-                        params['cut_randomness'] = cut_randomness
-                        params['reassembly_style'] = reassembly_style
-                    elif decomposition_method == "remix_destrutturato":
-                        params['beat_preservation'] = beat_preservation
-                        params['melody_fragmentation'] = melody_fragmentation
-                    elif decomposition_method == "musique_concrete":
-                        params['grain_size'] = grain_size
-                        params['texture_density'] = texture_density
-                    elif decomposition_method == "decostruzione_postmoderna":
-                        params['irony_level'] = irony_level
-                        params['context_shift'] = context_shift
-                    elif decomposition_method == "decomposizione_creativa":
-                        params['discontinuity'] = discontinuity
-                        params['emotional_shift'] = emotional_shift
-
-                    # Analizza la struttura originale (anche per l'analisi testuale)
-                    original_audio_info = analyze_audio_structure(audio, sr)
-                    original_audio_info['audio'] = audio # Salva l'audio originale per il calcolo della durata nell'analisi
-
-                    # Esegui la decomposizione
-                    if decomposition_method == "cut_up_sonoro":
-                        processed_audio_data = cut_up_sonoro(audio, sr, params)
-                    elif decomposition_method == "remix_destrutturato":
-                        processed_audio_data = remix_destrutturato(audio, sr, params)
-                    elif decomposition_method == "musique_concrete":
-                        processed_audio_data = musique_concrete(audio, sr, params)
-                    elif decomposition_method == "decostruzione_postmoderna":
-                        processed_audio_data = decostruzione_postmoderna(audio, sr, params)
-                    elif decomposition_method == "decomposizione_creativa":
-                        processed_audio_data = decomposizione_creativa(audio, sr, params)
-                    elif decomposition_method == "random_chaos":
-                        processed_audio_data = random_chaos(audio, sr, params)
-                    else:
-                        st.error("Metodo di decomposizione non riconosciuto.")
-                        processed_audio_data = np.array([]) # Imposta a vuoto per evitare errori successivi
+    # Numero casuale di operazioni caotiche
+    num_operations = random.randint(3, int(8 * chaos_level))
+    
+    result_audio = audio.copy()
+    
+    for _ in range(num_operations):
+        if result_audio.size == 0:
+            break
+            
+        operation = random.choice([
+            'random_cuts', 'shuffle_chunks', 'reverse_sections',
+            'pitch_madness', 'time_chaos', 'granular_chaos',
+            'amplitude_chaos', 'frequency_chaos'
+        ])
+        
+        try:
+            if operation == 'random_cuts':
+                # Tagli completamente casuali
+                if len(result_audio) > 1000:
+                    num_cuts = random.randint(5, 20)
+                    cuts = sorted(random.sample(range(len(result_audio)), num_cuts))
+                    fragments = []
+                    for i in range(len(cuts) - 1):
+                        frag = result_audio[cuts[i]:cuts[i+1]]
+                        if frag.size > 0:
+                            fragments.append(frag)
+                    if fragments:
+                        random.shuffle(fragments)
+                        result_audio = np.concatenate(fragments)
+                        
+            elif operation == 'shuffle_chunks':
+                # Mescola blocchi dell'audio
+                chunk_size = int(fragment_size * sr * random.uniform(0.5, 2.0))
+                if chunk_size > 0 and len(result_audio) > chunk_size:
+                    chunks = [result_audio[i:i+chunk_size] 
+                             for i in range(0, len(result_audio), chunk_size)]
+                    chunks = [c for c in chunks if c.size > 0]
+                    if chunks:
+                        random.shuffle(chunks)
+                        result_audio = np.concatenate(chunks)
+                        
+            elif operation == 'reverse_sections':
+                # Inverti sezioni casuali
+                if len(result_audio) > 100:
+                    section_size = random.randint(100, len(result_audio) // 4)
+                    start = random.randint(0, max(0, len(result_audio) - section_size))
+                    end = min(start + section_size, len(result_audio))
+                    result_audio[start:end] = result_audio[start:end][::-1]
                     
-                    original_sr = sr # Salva sample rate per uso futuro
-
-                    if processed_audio_data.size == 0:
-                        st.warning("La decomposizione ha prodotto un audio vuoto. Si prega di provare con parametri diversi o un altro file.")
-
-            except Exception as e:
-                st.error(f"Si è verificato un errore durante l'elaborazione: {e}")
-                st.exception(e) # Mostra il traceback completo
-                processed_audio_data = None # Resetta per non mostrare output invalidi
-
-# Se l'audio processato è disponibile, mostralo
-if processed_audio_data is not None and processed_audio_data.size > 0 and original_sr is not None:
-    st.subheader("Brano Decomposto e Ricomposto")
+            elif operation == 'pitch_madness':
+                # Pitch shift estremi
+                shift_amount = random.uniform(-24, 24) * chaos_level
+                result_audio = safe_pitch_shift(result_audio, sr, shift_amount)
+                
+            elif operation == 'time_chaos':
+                # Time stretch estremi
+                stretch_factor = random.uniform(0.1, 5.0) * chaos_level
+                result_audio = safe_time_stretch(result_audio, stretch_factor)
+                
+            elif operation == 'granular_chaos':
+                # Granular synthesis caotica
+                if result_audio.size > 1000:
+                    grain_size = random.randint(50, 500)
+                    grains = []
+                    for i in range(0, len(result_audio) - grain_size, grain_size // 2):
+                        grain = result_audio[i:i+grain_size]
+                        if random.random() < 0.7:  # 70% probabilità di includere il grano
+                            if random.random() < 0.5:
+                                grain = grain[::-1]  # Reverse casuale
+                            grains.append(grain)
+                    if grains:
+                        random.shuffle(grains)
+                        result_audio = np.concatenate(grains)
+                        
+            elif operation == 'amplitude_chaos':
+                # Modulazione d'ampiezza caotica
+                mod_freq = random.uniform(0.1, 50) * chaos_level
+                mod_depth = random.uniform(0.3, 1.0)
+                modulator = np.sin(2 * np.pi * mod_freq * np.arange(len(result_audio)) / sr)
+                result_audio = result_audio * (1 - mod_depth + mod_depth * modulator)
+                
+            elif operation == 'frequency_chaos':
+                # Filtri casuali (simulati con convoluzione semplice)
+                if result_audio.size > 100:
+                    filter_type = random.choice(['lowpass', 'highpass', 'bandpass'])
+                    # Filtro semplificato usando una convoluzione con kernel casuale
+                    kernel_size = random.randint(3, 21)
+                    if filter_type == 'lowpass':
+                        kernel = np.ones(kernel_size) / kernel_size  # Media mobile
+                    elif filter_type == 'highpass':
+                        kernel = np.array([-1, 2, -1]) / 4  # Differenza
+                        kernel = np.pad(kernel, (kernel_size//2 - 1, kernel_size//2 - 1))
+                    else:  # bandpass
+                        kernel = signal.windows.gaussian(kernel_size, kernel_size/6)
+                        kernel = kernel / np.sum(kernel)
+                    
+                    # Applica convoluzione se possibile
+                    if len(result_audio) > len(kernel):
+                        result_audio = np.convolve(result_audio, kernel, mode='same')
+                        
+        except Exception as e:
+            st.warning(f"Operazione chaos '{operation}' fallita: {e}")
+            continue
     
-    # Normalizza l'audio per una riproduzione sicura
-    processed_audio_data = librosa.util.normalize(processed_audio_data)
-
-    # Salva l'audio processato in un buffer per la riproduzione e il download
-    audio_buffer = io.BytesIO()
-    try:
-        sf.write(audio_buffer, processed_audio_data, original_sr, format='WAV')
-        audio_buffer.seek(0)
-        st.audio(audio_buffer, format='audio/wav')
-    except Exception as e:
-        st.error(f"Errore durante la creazione del file audio per la riproduzione: {e}")
-        st.exception(e)
-
-    st.subheader("Visualizzazione Waveform")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("##### Originale")
-        if original_audio_data_for_plot is not None and original_sr_for_plot is not None:
-            fig_original, ax_original = plt.subplots(figsize=(8, 2)) # Dimensioni più piccole
-            librosa.display.waveshow(original_audio_data_for_plot, sr=original_sr_for_plot, ax=ax_original)
-            ax_original.set_title("Waveform Originale")
-            ax_original.set_xlabel("Tempo (s)")
-            ax_original.set_ylabel("Ampiezza")
-            st.pyplot(fig_original)
-            plt.close(fig_original) # Chiudi la figura per liberare memoria
-        else:
-            st.info("Carica un brano per vedere la waveform originale.")
-
-    with col2:
-        st.markdown("##### Decomposto")
-        fig_decomposed, ax_decomposed = plt.subplots(figsize=(8, 2)) # Dimensioni più piccole
-        librosa.display.waveshow(processed_audio_data, sr=original_sr, ax=ax_decomposed)
-        ax_decomposed.set_title("Waveform Decomposta")
-        ax_decomposed.set_xlabel("Tempo (s)")
-        ax_decomposed.set_ylabel("Ampiezza")
-        st.pyplot(fig_decomposed)
-        plt.close(fig_decomposed) # Chiudi la figura per liberare memoria
-
-    # Pulsante per il download
-    st.download_button(
-        label="Scarica Brano Decomposto",
-        data=audio_buffer.getvalue(),
-        file_name=f"decomposed_audio_{decomposition_method}.wav",
-        mime="audio/wav"
-    )
-
-    # Analisi Scritta
-    st.subheader("Analisi Scritta del Processo")
-    if original_audio_info is not None:
-        current_params = {
-            'fragment_size': fragment_size,
-            'chaos_level': chaos_level,
-            'structure_preservation': structure_preservation,
-        }
-        if decomposition_method == "cut_up_sonoro":
-            current_params['cut_randomness'] = cut_randomness
-            current_params['reassembly_style'] = reassembly_style
-        elif decomposition_method == "remix_destrutturato":
-            current_params['beat_preservation'] = beat_preservation
-            current_params['melody_fragmentation'] = melody_fragmentation
-        elif decomposition_method == "musique_concrete":
-            current_params['grain_size'] = grain_size
-            current_params['texture_density'] = texture_density
-        elif decomposition_method == "decostruzione_postmoderna":
-            current_params['irony_level'] = irony_level
-            current_params['context_shift'] = context_shift
-        elif decomposition_method == "decomposizione_creativa":
-            current_params['discontinuity'] = discontinuity
-            current_params['emotional_shift'] = emotional_shift
-
-        analysis_text = generate_analysis_text(original_audio_info, processed_audio_data, original_sr, decomposition_method, current_params)
-        st.markdown(analysis_text)
-    else:
-        st.info("Carica un brano e decomponilo per visualizzare l'analisi.")
+    # Normalizzazione finale
+    if result_audio.size > 0:
+        result_audio = np.nan_to_num(result_audio, nan=0.0, posinf=0.0, neginf=0.0)
+        max_val = np.max(np.abs(result_audio))
+        if max_val > 0:
+            result_audio = result_audio / max_val * 0.8
+    
+    return result_audio
