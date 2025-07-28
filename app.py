@@ -198,7 +198,7 @@ def cut_up_sonoro(audio, sr, params):
         if fragment.size > 0:
             fragments.append(fragment)
 
-    if len(fragments) == 0: # CORREZIONE: uso len() invece di not
+    if len(fragments) == 0:
         return np.array([])
 
     if reassembly == 'random':
@@ -229,7 +229,7 @@ def cut_up_sonoro(audio, sr, params):
                     end -= 1
         fragments = new_fragments
 
-    if len(fragments) > 0: # CORREZIONE: uso len() invece di not
+    if len(fragments) > 0:
         result = np.concatenate(fragments)
     else:
         result = np.array([])
@@ -257,7 +257,6 @@ def remix_destrutturato(audio, sr, params):
         beat_times = librosa.frames_to_time(beats, sr=sr)
         cut_points = [int(t * sr) for t in beat_times if t * sr < len(audio)]
 
-    # CORREZIONE: uso len() invece di not
     if len(cut_points) == 0 or (beat_preservation <= 0.5):
         num_cuts = int(len(audio) / fragment_samples)
         if num_cuts == 0 and len(audio) > 0:
@@ -273,7 +272,6 @@ def remix_destrutturato(audio, sr, params):
             return np.array([])
 
     cut_points = sorted(list(set(cut_points)))
-    # CORREZIONE: uso len() in vece di not
     if len(cut_points) == 0:
         return np.array([])
 
@@ -291,31 +289,27 @@ def remix_destrutturato(audio, sr, params):
             continue
         fragment = audio[start:end]
 
-        if fragment.size == 0:
-            continue
-
-        if random.random() < melody_fragmentation / 3.0:
-            try:
-                if fragment.size > 0:
+        if fragment.size > 0:
+            if random.random() < melody_fragmentation / 3.0:
+                try:
                     shift_steps = random.uniform(-7, 7)
                     fragment = librosa.effects.pitch_shift(fragment, sr=sr, n_steps=shift_steps)
-            except Exception as e:
-                st.warning(f"Pitch shift failed for fragment in remix_destrutturato: {e}")
-                fragment = np.array([]) # Marca il frammento come vuoto in caso di errore
+                except Exception as e:
+                    st.warning(f"Pitch shift failed for fragment in remix_destrutturato: {e}")
+                    fragment = np.array([]) # Marca il frammento come vuoto in caso di errore
 
-        if random.random() < melody_fragmentation / 3.0:
-            try:
-                if fragment.size > 0:
+            if fragment.size > 0 and random.random() < melody_fragmentation / 3.0: # Aggiunto controllo size
+                try:
                     stretch_factor = random.uniform(0.7, 1.4)
                     fragment = librosa.effects.time_stretch(fragment, rate=stretch_factor)
-            except Exception as e:
-                st.warning(f"Time stretch failed for fragment in remix_destrutturato: {e}")
-                fragment = np.array([]) # Marca il frammento come vuoto in caso di errore
+                except Exception as e:
+                    st.warning(f"Time stretch failed for fragment in remix_destrutturato: {e}")
+                    fragment = np.array([]) # Marca il frammento come vuoto in caso di errore
 
         if fragment.size > 0:
             fragments.append(fragment)
 
-    if len(fragments) == 0: # CORREZIONE: uso len() invece di not
+    if len(fragments) == 0:
         return np.array([])
 
     if beat_preservation > 0.3:
@@ -347,7 +341,7 @@ def remix_destrutturato(audio, sr, params):
     else:
         random.shuffle(fragments)
 
-    if len(fragments) == 0: # CORREZIONE: uso len() invece di not
+    if len(fragments) == 0:
         return np.array([])
 
     result = fragments[0]
@@ -419,20 +413,18 @@ def musique_concrete(audio, sr, params):
             if random.random() < chaos_level / 3.0:
                 grain = grain[::-1]
 
-            if random.random() < chaos_level / 3.0:
+            if grain.size > 0 and random.random() < chaos_level / 3.0: # Aggiunto controllo size
                 try:
-                    if grain.size > 0:
-                        shift = random.uniform(-12, 12)
-                        grain = librosa.effects.pitch_shift(grain, sr=sr, n_steps=shift)
+                    shift = random.uniform(-12, 12)
+                    grain = librosa.effects.pitch_shift(grain, sr=sr, n_steps=shift)
                 except Exception as e:
                     st.warning(f"Pitch shift failed for grain in musique_concrete: {e}")
                     grain = np.array([])
 
-            if random.random() < chaos_level / 3.0:
+            if grain.size > 0 and random.random() < chaos_level / 3.0: # Aggiunto controllo size
                 try:
-                    if grain.size > 0:
-                        stretch = random.uniform(0.25, 4.0)
-                        grain = librosa.effects.time_stretch(grain, rate=stretch)
+                    stretch = random.uniform(0.25, 4.0)
+                    grain = librosa.effects.time_stretch(grain, rate=stretch)
                 except Exception as e:
                     st.warning(f"Time stretch failed for grain in musique_concrete: {e}")
                     grain = np.array([])
@@ -440,7 +432,7 @@ def musique_concrete(audio, sr, params):
             if grain.size > 0:
                 grains.append(grain)
 
-    if len(grains) == 0: # CORREZIONE: usa len() invece di not
+    if len(grains) == 0:
         return np.array([])
 
     num_grains_output = int(len(grains) * texture_density)
@@ -519,7 +511,7 @@ def decostruzione_postmoderna(audio, sr, params):
             energy = np.array([])
 
     important_frames = np.array([])
-    if energy.size > 0:
+    if energy.size > 0: # Correzione: energy.size > 0 anziché `energy and energy.size > 0`
         energy_threshold = np.percentile(energy, 70)
         important_frames = np.where(energy > energy_threshold)[0]
 
@@ -546,11 +538,11 @@ def decostruzione_postmoderna(audio, sr, params):
             break
         start = random.randint(0, len(audio) - fragment_samples)
         fragment = audio[start:start + fragment_samples]
-        if fragment.size > 0:
+        if fragment.size > 0: # Correzione: fragment.size > 0 anziché `fragment and fragment.size > 0`
             fragments.append(fragment)
             fragment_types.append('random')
 
-    if len(fragments) == 0: # CORREZIONE: usa len() invece di not
+    if len(fragments) == 0:
         return np.array([])
 
     processed_fragments = []
@@ -579,7 +571,7 @@ def decostruzione_postmoderna(audio, sr, params):
                 fragment = fragment if fragment.size > 0 else np.array([])
 
 
-        if random.random() < context_shift / 2.0:
+        if fragment.size > 0 and random.random() < context_shift / 2.0: # Aggiunto controllo size
             context_effects = [
                 lambda x: librosa.effects.pitch_shift(x, sr=sr, n_steps=random.uniform(-7, 7)) if x.size > 0 else np.array([]),
                 lambda x: x * np.linspace(0, 1, len(x)) if len(x) > 0 else np.array([]),
@@ -601,13 +593,13 @@ def decostruzione_postmoderna(audio, sr, params):
         if fragment.size > 0:
             processed_fragments.append(fragment)
 
-    if len(processed_fragments) == 0: # CORREZIONE: usa len() invece di not
+    if len(processed_fragments) == 0:
         return np.array([])
 
     fragment_energies = [np.mean(np.abs(frag)) for frag in processed_fragments if frag.size > 0]
     processed_fragments_filtered = [frag for frag in processed_fragments if frag.size > 0]
 
-    if len(processed_fragments_filtered) == 0: # CORREZIONE: usa len() invece di not
+    if len(processed_fragments_filtered) == 0:
         return np.array([])
 
     sorted_indices = np.argsort(fragment_energies)
@@ -672,7 +664,7 @@ def decomposizione_creativa(audio, sr, params):
 
     mood_labels = np.array([])
     # Controlla se features è stato creato e non è vuoto
-    if features.size > 0:
+    if features.size > 0: # Correzione: features.size > 0 anziché `features and features.size > 0`
         try:
             features_scaled = StandardScaler().fit_transform(features.T) # Trasponi per avere (n_frames, n_features)
             # Controlla che features_scaled non sia vuoto dopo lo scaling
@@ -746,7 +738,7 @@ def decomposizione_creativa(audio, sr, params):
     mood_fragments = {k: [f for f in v if f.size > 0] for k, v in mood_fragments.items()}
     mood_fragments = {k: v for k, v in mood_fragments.items() if v}
 
-    if len(mood_fragments) == 0: # CORREZIONE: Se nessun frammento è stato generato o sono tutti vuoti
+    if len(mood_fragments) == 0:
         st.warning("No valid fragments generated for any mood. Returning original audio as fallback.")
         return audio
 
@@ -763,7 +755,7 @@ def decomposizione_creativa(audio, sr, params):
 
     iteration_count = 0
     # NUOVO: Rafforza la condizione del while loop
-    while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values()):
+    while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values()): # Correzione: rimosso `and mood_fragments`
         iteration_count += 1
         
         # NUOVO: Controlla che il current_mood esista e abbia frammenti
@@ -774,7 +766,7 @@ def decomposizione_creativa(audio, sr, params):
             if fragment.size == 0:
                 continue
 
-            if random.random() < emotional_shift:
+            if fragment.size > 0 and random.random() < emotional_shift: # Aggiunto controllo size
                 emotion_transforms = [
                     lambda x: librosa.effects.pitch_shift(x, sr=sr, n_steps=random.uniform(-3, 3)) if x.size > 0 else np.array([]),
                     lambda x: x * np.power(np.linspace(0.3, 1, len(x)) if len(x) > 0 else np.array([]), random.uniform(0.5, 2)) if x.size > 0 else np.array([]),
@@ -796,16 +788,16 @@ def decomposizione_creativa(audio, sr, params):
                 result_fragments.append(fragment)
         else:
             # Se il mood corrente non ha più frammenti o non esiste, cambia mood
-            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
-            if available_moods:
+            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0] # Correzione: len(available_moods) > 0 anziché `available_moods`
+            if len(available_moods) > 0:
                 current_mood = random.choice(available_moods)
             else:
                 # Nessun frammento rimanente in nessun mood, esci dal loop
                 break
 
         if random.random() < discontinuity / 2.0:
-            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
-            if available_moods:
+            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0] # Correzione: len(available_moods) > 0 anziché `available_moods`
+            if len(available_moods) > 0:
                 current_mood = random.choice(available_moods)
             elif any(len(v) > 0 for v in mood_fragments.values()): # Fallback se il mood scelto non ha più frammenti
                  current_mood = random.choice([m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]) # Scegli un mood a caso tra quelli che hanno ancora frammenti
@@ -874,7 +866,7 @@ def random_chaos(audio, sr, params):
                 st.warning(f"Metodo '{method.__name__}' ha prodotto un risultato di tipo inatteso. Mantenendo il risultato precedente.")
 
         except Exception as e:
-            st.warning(f"Errore in {method.__name__}: {e}. Mantenendo il risultato precedente.")
+            st.warning(f"Errore in {method.__name__}: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}. Mantenendo il risultato precedente.")
             continue
 
     if result.size == 0:
@@ -904,7 +896,7 @@ def process_audio(audio_file, method, params):
 
     try:
         processed_audio = np.array([])
-        if len(audio.shape) > 1:
+        if audio.size > 0 and len(audio.shape) > 1: # Correzione: audio.size > 0 anziché `audio and ...`
             processed_channels = []
             for channel in range(audio.shape[0]):
                 channel_audio = audio[channel]
@@ -919,8 +911,12 @@ def process_audio(audio_file, method, params):
             min_length = min(len(ch) for ch in processed_channels)
             processed_channels = [ch[:min_length] for ch in processed_channels]
             processed_audio = np.array(processed_channels)
-        else:
+        elif audio.size > 0: # Correzione: audio.size > 0
             processed_audio = decompose_audio(audio, sr, method, params)
+        else: # Audio vuoto all'inizio
+            st.error("Il file audio caricato è vuoto o non contiene dati validi.")
+            return None, None, None
+
 
         if processed_audio is None or processed_audio.size == 0:
             st.error("La decomposizione ha prodotto un file audio vuoto.")
