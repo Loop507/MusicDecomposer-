@@ -14,7 +14,7 @@ import io
 import base64
 
 # Configurazione pagina
-st.set_page_config(
+st.set_page_page_config(
     page_title="MusicDecomposer by loop507",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -754,8 +754,8 @@ def decomposizione_creativa(audio, sr, params):
     max_iterations = total_expected_fragments * 2 if total_expected_fragments > 0 else 100
 
     iteration_count = 0
-    # NUOVO: Rafforza la condizione del while loop
-    while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values()): # Correzione: rimosso `and mood_fragments`
+    # NUOVO: Rafforza la condizione del while loop con isinstance
+    while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values() if isinstance(v, list)): # Correzione: rimosso `and mood_fragments`
         iteration_count += 1
         
         # NUOVO: Controlla che il current_mood esista e abbia frammenti
@@ -799,7 +799,7 @@ def decomposizione_creativa(audio, sr, params):
             available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0] # Correzione: len(available_moods) > 0 anziché `available_moods`
             if len(available_moods) > 0:
                 current_mood = random.choice(available_moods)
-            elif any(len(v) > 0 for v in mood_fragments.values()): # Fallback se il mood scelto non ha più frammenti
+            elif any(len(v) > 0 for v in mood_fragments.values() if isinstance(v, list)): # Fallback se il mood scelto non ha più frammenti
                  current_mood = random.choice([m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]) # Scegli un mood a caso tra quelli che hanno ancora frammenti
 
         if random.random() < discontinuity / 4.0:
@@ -928,7 +928,7 @@ def process_audio(audio_file, method, params):
         else:
             sf.write(output_path, processed_audio, sr)
 
-        return output_path, sr, audio_path
+        return output_path, sr, original_audio_path_temp
 
     except Exception as e:
         st.error(f"Errore nel processing: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}")
@@ -957,7 +957,7 @@ def decompose_audio(audio, sr, method, params):
     }
 
     decompose_func = methods_map.get(method)
-    if decompose_func is None:
+    if decompose_func == None:
         st.error(f"Metodo {method} non riconosciuto")
         return audio
 
