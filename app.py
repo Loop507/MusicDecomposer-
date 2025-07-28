@@ -14,7 +14,7 @@ import random
 # import mido
 # import pretty_midi
 
-# --- Funzioni Helper Sicure ---
+# Funzioni Helper Sicure
 
 def safe_pitch_shift(audio, sr, n_steps):
     """
@@ -99,7 +99,7 @@ def decostruzione_postmoderna(audio, sr, params):
 
 
     try:
-        # --- 1. Calcolo Energia (RMS) per identificare frammenti "importanti" ---
+        # 1. Calcolo Energia (RMS) per identificare frammenti "importanti"
         hop_length = 512
         energy = np.array([])
         
@@ -130,7 +130,7 @@ def decostruzione_postmoderna(audio, sr, params):
         fragments = []
         fragment_types = []
 
-        # --- 2. Estrazione Frammenti ---
+        # 2. Estrazione Frammenti
         # Estrai frammenti importanti
         for t in important_times:
             start_sample = int(t * sr)
@@ -162,7 +162,7 @@ def decostruzione_postmoderna(audio, sr, params):
             st.warning("Nessun frammento valido è stato estratto. Ritorno l'audio originale.")
             return audio # Fallback se nessun frammento è stato creato
 
-        # --- 3. Processa Frammenti con Trasformazioni e Effetti ---
+        # 3. Processa Frammenti con Trasformazioni e Effetti
         processed_fragments = []
         for i, (fragment, frag_type) in enumerate(zip(fragments, fragment_types)):
             if fragment.size == 0:
@@ -217,7 +217,7 @@ def decostruzione_postmoderna(audio, sr, params):
             st.warning("Nessun frammento è stato processato validamente. Ritorno l'audio originale.")
             return audio 
 
-        # --- 4. Riordino dei Frammenti ---
+        # 4. Riordino dei Frammenti
         fragment_energies = []
         processed_fragments_filtered = []
         
@@ -257,7 +257,7 @@ def decostruzione_postmoderna(audio, sr, params):
         else: 
             result_order_indices = list(range(len(processed_fragments_filtered))) # Ordine originale se non c'è energia
 
-        # --- 5. Costruzione del Risultato Finale ---
+        # 5. Costruzione del Risultato Finale
         result_fragments_final = []
         for i in result_order_indices:
             if i < len(processed_fragments_filtered):
@@ -418,8 +418,7 @@ def decompose_audio(audio, sr, method, params):
         st.error(f"Dettagli dell'errore: {e.__class__.__name__}")
         return audio_backup # Fallback sicuro all'originale
 
----
-## Struttura dell'Applicazione Streamlit
+# Struttura dell'Applicazione Streamlit
 
 # Questa è la parte principale dell'app che interagisce con l'utente, 
 # carica l'audio, mostra i controlli e riproduce il risultato.
@@ -429,7 +428,7 @@ st.set_page_config(layout="wide", page_title="Decostruttore Audio Postmoderno")
 st.title("🎶 Decostruttore Audio Postmoderno")
 st.markdown("Carica un file audio e applica una 'decostruzione' ironica e frammentata, ispirata all'arte postmoderna.")
 
-# --- Interfaccia Utente ---
+# Interfaccia Utente
 uploaded_file = st.file_uploader("Carica il tuo file audio (WAV, MP3, FLAC, OGG)", type=["wav", "mp3", "flac", "ogg"])
 
 if uploaded_file is not None:
