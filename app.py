@@ -724,8 +724,12 @@ def decomposizione_creativa(audio, sr, params):
                 mood_slice = mood_labels[i:i+frames_per_fragment]
                 if mood_slice.size > 0:
                     # CORREZIONE APPLICATA QUI (come da tua indicazione)
-                    mood_slice_list = [int(m) for m in mood_slice]  # assicurati siano int
-                    dominant_mood = max(set(mood_slice_list), key=mood_slice_list.count)
+                    mood_slice_list = [int(m) for m in mood_slice.tolist()]  # conversione sicura da np.ndarray a list di int
+                    counts = {}
+                    for mood in mood_slice_list:
+                        counts[mood] = counts.get(mood, 0) + 1
+                    dominant_mood = max(counts, key=counts.get)
+                    
                     if dominant_mood in mood_fragments:
                         mood_fragments[dominant_mood].append(fragment)
                     else:
