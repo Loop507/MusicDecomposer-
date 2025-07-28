@@ -427,7 +427,6 @@ def decompose_audio(audio, sr, method, params):
 ## Struttura dell'Applicazione Streamlit
 
 Questa è la parte principale dell'app che interagisce con l'utente, carica l'audio, mostra i controlli e riproduce il risultato.
-
 ```python
 st.set_page_config(layout="wide", page_title="Decostruttore Audio Postmoderno")
 
@@ -483,7 +482,7 @@ if uploaded_file is not None:
                 st.subheader("Risultato Decostruito")
                 st.audio(result_audio, sample_rate=sr, format='audio/wav', start_time=0)
                 
-                # Opzione per scaricare l'audio risultante
+                # Opzione per scaricare l'audio
                 # sf.write richiede un oggetto simile a file, quindi usiamo io.BytesIO
                 import io
                 buffer = io.BytesIO()
