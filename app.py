@@ -115,7 +115,7 @@ def analyze_audio_structure(audio, sr):
         if beats.ndim > 1:
             beats = beats.flatten()
     except Exception as e:
-        st.warning(f"Warning: Could not track beats, {e}. Setting tempo to 0. Trace: {traceback.format_exc()}")
+        st.warning(f"Warning: Could not track beats, {e}. Trace: {traceback.format_exc()}")
         tempo = 0
         beats = np.array([])
 
@@ -778,7 +778,12 @@ def decomposizione_creativa(audio, sr, params):
         # Controlla che il current_mood esista e abbia frammenti
         if current_mood in mood_fragments and len(mood_fragments[current_mood]) > 0:
             fragment = random.choice(mood_fragments[current_mood])
-            mood_fragments[current_mood].remove(fragment)
+            
+            # FIX per errore "truth value of an array": rimuovi per identità, non per valore
+            for idx, f in enumerate(mood_fragments[current_mood]):
+                if f is fragment:
+                    del mood_fragments[current_mood][idx]
+                    break
 
             if fragment.size == 0:
                 continue
@@ -892,54 +897,64 @@ def random_chaos(audio, sr, params):
 
     return result
 
-def process_audio(audio_file, method, params):
+def process_audio(audio_bytes_io, method, params, initial_sr=None):
     """Processa l'audio con il metodo scelto"""
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-        tmp_file.write(audio_file.read())
-        audio_path = tmp_file.name
+    audio_bytes_io.seek(0) # Assicurati che il puntatore sia all'inizio del file
+    
+    # Crea un file temporaneo per salvare l'audio caricato
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_input_file:
+        tmp_input_file.write(audio_bytes_io.read())
+        original_audio_path_temp = tmp_input_file.name
 
-    audio = np.array([])
-    sr = None
+    audio_original = np.array([])
+    sr = initial_sr
+    
     try:
         # Carica audio e verifica che non sia nullo
-        audio, sr = librosa.load(audio_path, sr=None, mono=False)
-        if audio is None or audio.size == 0:
+        # Librosa può dedurre il sample rate se sr=None
+        audio_original, sr = librosa.load(original_audio_path_temp, sr=None, mono=False)
+        if audio_original is None or audio_original.size == 0:
             st.error("Il file audio caricato è vuoto o non contiene dati validi dopo il caricamento.")
-            return None, None, None
+            return None, None, None, None
 
     except Exception as e:
         st.error(f"Errore nel caricamento del file audio: {e}. Trace: {traceback.format_exc()}")
-        return None, None, None
+        return None, None, None, None
+    finally:
+        # Pulisci il file temporaneo dell'input subito dopo il caricamento in memoria
+        if os.path.exists(original_audio_path_temp):
+            os.unlink(original_audio_path_temp)
 
+    output_path = None
     try:
         processed_audio = np.array([])
-        if audio.size > 0 and len(audio.shape) > 1:
+        if audio_original.size > 0 and len(audio_original.shape) > 1:
             processed_channels = []
-            for channel in range(audio.shape[0]):
-                channel_audio = audio[channel]
+            for channel in range(audio_original.shape[0]):
+                channel_audio = audio_original[channel]
                 processed_channel = decompose_audio(channel_audio, sr, method, params)
                 if processed_channel is not None and processed_channel.size > 0:
                     processed_channels.append(processed_channel)
 
             if len(processed_channels) == 0:
                 st.error("La decomposizione ha prodotto risultati vuoti per tutti i canali.")
-                return None, None, None
+                return None, None, None, None
 
             # Assicurati che tutti i canali abbiano la stessa lunghezza minima prima di concatenare
             min_length = min(len(ch) for ch in processed_channels)
             processed_channels = [ch[:min_length] for ch in processed_channels]
             processed_audio = np.array(processed_channels)
-        elif audio.size > 0:
-            processed_audio = decompose_audio(audio, sr, method, params)
+        elif audio_original.size > 0:
+            processed_audio = decompose_audio(audio_original, sr, method, params)
         else: # Audio vuoto all'inizio
             st.error("Il file audio caricato è vuoto o non contiene dati validi.")
-            return None, None, None
+            return None, None, None, None
 
 
         if processed_audio is None or processed_audio.size == 0:
             st.error("La decomposizione ha prodotto un file audio vuoto.")
-            return None, None, None
+            return None, None, None, None
 
         output_path = tempfile.mktemp(suffix='.wav')
         if len(processed_audio.shape) > 1:
@@ -947,16 +962,13 @@ def process_audio(audio_file, method, params):
         else:
             sf.write(output_path, processed_audio, sr)
 
-        return output_path, sr, audio_path
-
+        return output_path, sr, audio_original, None # Restituisce l'array audio_original
     except Exception as e:
         st.error(f"Errore nel processing: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}. Trace: {traceback.format_exc()}")
-        return None, None, None
+        return None, None, None, None
     finally:
-        # Pulisci i file temporanei
-        if 'audio_path' in locals() and os.path.exists(audio_path):
-            os.unlink(audio_path)
-        if 'output_path' in locals() and os.path.exists(output_path):
+        # Pulisci il file temporaneo di output se è stato creato
+        if output_path and os.path.exists(output_path):
             os.unlink(output_path)
 
 
@@ -1071,23 +1083,26 @@ if uploaded_file is not None:
 
     if st.button(" DECOMPONI E RICOMPONI", type="primary", use_container_width=True):
         with st.spinner(" Decomponendo il brano in arte sonora sperimentale..."):
-            output_path, sr, original_audio_path_temp = process_audio(uploaded_file, decomposition_method, params)
+            # Passa l'oggetto BytesIO del file caricato direttamente
+            output_path, sr, original_audio_data, _ = process_audio(io.BytesIO(uploaded_file.read()), decomposition_method, params)
 
             if output_path is not None and sr is not None:
-                original_audio, _ = librosa.load(original_audio_path_temp, sr=sr)
+                # original_audio_data è già l'array NumPy caricato
                 processed_audio, _ = librosa.load(output_path, sr=sr)
 
                 col1, col2 = st.columns(2)
 
                 with col1:
                     st.subheader(" Audio Originale")
-                    st.audio(uploaded_file, format='audio/wav')
+                    # Qui puoi usare l'oggetto uploaded_file direttamente o rigenerare l'audio dai dati NumPy
+                    st.audio(uploaded_file.read(), format=uploaded_file.type) # Usa il file caricato originale
+                    uploaded_file.seek(0) # Reset del puntatore dopo la lettura per la riproduzione
 
-                    duration_orig = len(original_audio) / sr if original_audio.size > 0 else 0
+                    duration_orig = len(original_audio_data) / sr if original_audio_data.size > 0 else 0
                     st.info(f"""
                     **Durata:** {duration_orig:.2f} secondi
                     **Sample Rate:** {sr} Hz
-                    **Samples:** {len(original_audio):,}
+                    **Samples:** {len(original_audio_data):,}
                     """)
 
                 with col2:
@@ -1106,7 +1121,7 @@ if uploaded_file is not None:
 
                 st.subheader(" Analisi Spettrale Comparativa")
                 with st.spinner("Generando visualizzazioni..."):
-                    fig = create_visualization(original_audio, processed_audio, sr)
+                    fig = create_visualization(original_audio_data, processed_audio, sr) # Usa original_audio_data
                     st.pyplot(fig)
 
                 st.subheader(" Download Risultato")
@@ -1129,8 +1144,8 @@ if uploaded_file is not None:
 
                     with col1:
                         st.write("**Audio Originale:**")
-                        if original_audio.size > 0:
-                            orig_structure = analyze_audio_structure(original_audio, sr)
+                        if original_audio_data.size > 0:
+                            orig_structure = analyze_audio_structure(original_audio_data, sr)
                             st.write(f"- Tempo stimato: {orig_structure['tempo']:.1f} BPM")
                             st.write(f"- Beat rilevati: {len(orig_structure['beats'])}")
                             st.write(f"- Onset rilevati: {len(orig_structure['onset_times'])}")
@@ -1154,12 +1169,6 @@ if uploaded_file is not None:
                                 st.write("- Centroide spettrale medio: N/A")
                         else:
                             st.write("Nessun dato audio per l'analisi.")
-
-                try:
-                    os.unlink(output_path)
-                    os.unlink(original_audio_path_temp)
-                except Exception as e:
-                    st.warning(f"Errore durante la pulizia dei file temporanei: {e}. Trace: {traceback.format_exc()}")
 
             else:
                 st.error(" Errore nel processing dell'audio. Il risultato potrebbe essere vuoto o non valido.")
