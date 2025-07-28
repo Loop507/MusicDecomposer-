@@ -669,11 +669,11 @@ def decomposizione_creativa(audio, sr, params):
             st.warning("Not enough frames to create features for clustering.")
 
     mood_labels = np.array([])
-    if features.size > 0: # <-- CONTROLLO ROBUSTO
+    if np.any(features).size > 0: # <-- CONTROLLO ROBUSTO
         try:
             features_scaled = StandardScaler().fit_transform(features.T)
             # NUOVO: Controlla che features_scaled abbia almeno un campione per il clustering
-            if features_scaled.shape[0] == 0:
+            if np.any(features)_scaled.shape[0] == 0:
                 st.warning("Scaled features are empty. Cannot perform KMeans clustering.")
             else:
                 n_clusters = min(8, features_scaled.shape[0] // 10)
