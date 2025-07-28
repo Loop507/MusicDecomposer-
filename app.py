@@ -186,19 +186,19 @@ def cut_up_sonoro(audio, sr, params):
             if new_size <= 0:
                 continue
 
-            if new_size < fragment.size:
-                fragment = fragment[:new_size]
-            else:
-                if fragment.size > 0: # Solo se c'è qualcosa da estendere
+            if fragment.size > 0: # Solo se c'è qualcosa da manipolare
+                if new_size < fragment.size:
+                    fragment = fragment[:new_size]
+                else:
                     indices = np.linspace(0, fragment.size - 1, new_size)
                     fragment = np.interp(indices, np.arange(fragment.size), fragment)
-                else: # Se il frammento è vuoto, rimane vuoto
-                    fragment = np.array([])
+            else: # Se il frammento è vuoto, rimane vuoto
+                fragment = np.array([])
 
         if fragment.size > 0:
             fragments.append(fragment)
 
-    if not fragments:
+    if not fragments: # Modifica: usa not fragments per controllare lista vuota
         return np.array([])
 
     if reassembly == 'random':
@@ -215,10 +215,10 @@ def cut_up_sonoro(audio, sr, params):
         new_fragments = []
         start, end = 0, len(fragments) - 1
         while start <= end:
-            if (len(new_fragments) % 2 == 0) and (fragments[start].size > 0):
+            if len(fragments[start]) > 0 and len(new_fragments) % 2 == 0: # Modifica: aggiungi len(fragments[start]) > 0
                 new_fragments.append(fragments[start])
                 start += 1
-            elif (len(new_fragments) % 2 != 0) and (fragments[end].size > 0):
+            elif len(fragments[end]) > 0 and len(new_fragments) % 2 != 0: # Modifica: aggiungi len(fragments[end]) > 0
                 new_fragments.append(fragments[end])
                 end -= 1
             else: # Se il frammento è vuoto, sposta il puntatore senza aggiungere
@@ -228,7 +228,7 @@ def cut_up_sonoro(audio, sr, params):
                     end -= 1
         fragments = new_fragments
 
-    if fragments:
+    if len(fragments) > 0: # Modifica: usa len(fragments) > 0
         result = np.concatenate(fragments)
     else:
         result = np.array([])
@@ -262,16 +262,16 @@ def remix_destrutturato(audio, sr, params):
             num_cuts = 1
         if len(audio) > 0 and num_cuts > 0:
             # Ensure start point is valid for random.sample
-            valid_range = range(0, len(audio))
-            if len(valid_range) > 0:
-                cut_points = sorted(random.sample(valid_range, min(num_cuts, len(valid_range))))
+            valid_range_len = len(range(0, len(audio)))
+            if valid_range_len > 0: # Modifica: controlla la lunghezza di valid_range
+                cut_points = sorted(random.sample(range(0, len(audio)), min(num_cuts, valid_range_len)))
             else:
                 return np.array([])
         else:
             return np.array([])
 
     cut_points = sorted(list(set(cut_points)))
-    if not cut_points:
+    if not cut_points: # Modifica: usa not cut_points
         return np.array([])
 
     if 0 not in cut_points:
@@ -312,7 +312,7 @@ def remix_destrutturato(audio, sr, params):
         if fragment.size > 0:
             fragments.append(fragment)
 
-    if not fragments:
+    if not fragments: # Modifica: usa not fragments
         return np.array([])
 
     if beat_preservation > 0.3:
@@ -344,7 +344,7 @@ def remix_destrutturato(audio, sr, params):
     else:
         random.shuffle(fragments)
 
-    if not fragments:
+    if not fragments: # Modifica: usa not fragments
         return np.array([])
 
     result = fragments[0]
@@ -437,7 +437,7 @@ def musique_concrete(audio, sr, params):
             if grain.size > 0:
                 grains.append(grain)
 
-    if not grains:
+    if not grains: # Modifica: usa not grains
         return np.array([])
 
     num_grains_output = int(len(grains) * texture_density)
@@ -547,7 +547,7 @@ def decostruzione_postmoderna(audio, sr, params):
             fragments.append(fragment)
             fragment_types.append('random')
 
-    if not fragments:
+    if not fragments: # Modifica: usa not fragments
         return np.array([])
 
     processed_fragments = []
@@ -598,13 +598,13 @@ def decostruzione_postmoderna(audio, sr, params):
         if fragment.size > 0:
             processed_fragments.append(fragment)
 
-    if not processed_fragments:
+    if not processed_fragments: # Modifica: usa not processed_fragments
         return np.array([])
 
     fragment_energies = [np.mean(np.abs(frag)) for frag in processed_fragments if frag.size > 0]
     processed_fragments_filtered = [frag for frag in processed_fragments if frag.size > 0]
 
-    if not processed_fragments_filtered:
+    if not processed_fragments_filtered: # Modifica: usa not processed_fragments_filtered
         return np.array([])
 
     sorted_indices = np.argsort(fragment_energies)
@@ -629,7 +629,7 @@ def decostruzione_postmoderna(audio, sr, params):
 
     result_fragments_final = [processed_fragments_filtered[i] for i in result_order_indices if i < len(processed_fragments_filtered)]
 
-    if result_fragments_final:
+    if len(result_fragments_final) > 0: # Modifica: usa len(result_fragments_final) > 0
         result = np.concatenate(result_fragments_final)
     else:
         result = np.array([])
@@ -710,11 +710,11 @@ def decomposizione_creativa(audio, sr, params):
 
     mood_fragments = {k: v for k, v in mood_fragments.items() if v}
 
-    if not mood_fragments:
+    if not mood_fragments: # Modifica: usa not mood_fragments
         return audio
 
     result_fragments = []
-    available_moods_init = [m for m in mood_fragments.keys() if mood_fragments[m]]
+    available_moods_init = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0] # Modifica: usa len(mood_fragments[m]) > 0
     if not available_moods_init: # Assicurati che ci sia almeno un mood con frammenti
         return audio
     current_mood = random.choice(available_moods_init)
@@ -723,10 +723,10 @@ def decomposizione_creativa(audio, sr, params):
     max_iterations = total_expected_fragments * 2
 
     iteration_count = 0
-    while iteration_count < max_iterations and any(mood_fragments.values()):
+    while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values()): # Modifica: usa len(v) > 0
         iteration_count += 1
         
-        if mood_fragments[current_mood]:
+        if len(mood_fragments[current_mood]) > 0: # Modifica: usa len(mood_fragments[current_mood]) > 0
             fragment = random.choice(mood_fragments[current_mood])
             mood_fragments[current_mood].remove(fragment)
 
@@ -755,11 +755,11 @@ def decomposizione_creativa(audio, sr, params):
                 result_fragments.append(fragment)
 
         if random.random() < discontinuity / 2.0:
-            available_moods = [m for m in mood_fragments.keys() if mood_fragments[m]]
+            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0] # Modifica: usa len(mood_fragments[m]) > 0
             if available_moods:
                 current_mood = random.choice(available_moods)
-            elif any(mood_fragments.values()):
-                 current_mood = random.choice([m for m in mood_fragments.keys() if mood_fragments[m]])
+            elif any(len(v) > 0 for v in mood_fragments.values()): # Modifica: usa len(v) > 0
+                 current_mood = random.choice([m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]) # Modifica: usa len(mood_fragments[m]) > 0
 
         if random.random() < discontinuity / 4.0:
             silence_duration = random.uniform(0.1, 0.5)
@@ -767,7 +767,7 @@ def decomposizione_creativa(audio, sr, params):
             if silence.size > 0:
                 result_fragments.append(silence)
 
-    if result_fragments:
+    if len(result_fragments) > 0: # Modifica: usa len(result_fragments) > 0
         result = np.concatenate(result_fragments)
     else:
         result = audio
@@ -815,9 +815,9 @@ def random_chaos(audio, sr, params):
             temp_result = method(result, sr, random_params)
             if temp_result is None or (isinstance(temp_result, np.ndarray) and temp_result.size == 0 and result.size > 0):
                 st.warning(f"Metodo '{method.__name__}' ha prodotto un array vuoto/non valido. Mantenendo il risultato precedente.")
-            elif isinstance(temp_result, np.ndarray): # Solo se è un NumPy array valido
+            elif isinstance(temp_result, np.ndarray):
                 result = temp_result
-            else: # Gestisci altri tipi di ritorno inattesi
+            else:
                 st.warning(f"Metodo '{method.__name__}' ha prodotto un risultato di tipo inatteso. Mantenendo il risultato precedente.")
 
         except Exception as e:
@@ -908,7 +908,7 @@ def decompose_audio(audio, sr, method, params):
     }
 
     decompose_func = methods_map.get(method)
-    if not decompose_func:
+    if decompose_func is None: # Modifica: usa is None
         st.error(f"Metodo {method} non riconosciuto")
         return audio
 
@@ -1000,7 +1000,7 @@ if uploaded_file is not None:
         with st.spinner(" Decomponendo il brano in arte sonora sperimentale..."):
             output_path, sr, original_audio_path_temp = process_audio(uploaded_file, decomposition_method, params)
 
-            if output_path and sr:
+            if output_path is not None and sr is not None: # Modifica: come suggerito
                 original_audio, _ = librosa.load(original_audio_path_temp, sr=sr)
                 processed_audio, _ = librosa.load(output_path, sr=sr)
 
