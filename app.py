@@ -515,7 +515,6 @@ def musique_concrete(audio, sr, params):
         result = np.array([])
 
     return result
-
 def decostruzione_postmoderna(audio, sr, params):
     """Decostruzione postmoderna ottimizzata e più leggera"""
     irony_level = params.get('irony_level', 0.5)  # Valore più basso di default
@@ -662,353 +661,51 @@ def decostruzione_postmoderna(audio, sr, params):
         # Concatenazione con crossfade più semplice
         if len(final_fragments) == 0:
             return audio
-
-        result_audio = final_fragments[0]
-        fade_duration = int(sr * 0.02)  # Fade più breve (20ms)
-
-        for frag in final_fragments[1:]:
-            if frag.size == 0:
-                continue
-
-            if result_audio.size == 0:
-                result_audio = frag
-                continue
-
-            # Crossfade semplificato
-            current_fade = min(fade_duration, result_audio.size, frag.size)
+       # Concatenazione con crossfade più semplice
+        if len(final_fragments) == 0:
+            return audio
+        
+        if len(final_fragments) == 1:
+            return final_fragments[0]
+        
+        # Concatena i frammenti con crossfade leggero
+        result = final_fragments[0].copy()
+        
+        for i in range(1, len(final_fragments)):
+            next_fragment = final_fragments[i]
             
-            if current_fade > 0:
-                # Fade out per l'audio esistente
-                fade_out = np.linspace(1, 0, current_fade)
-                # Fade in per il nuovo frammento
-                fade_in = np.linspace(0, 1, current_fade)
-                
-                # Applica il crossfade
-                overlap_existing = result_audio[-current_fade:] * fade_out
-                overlap_new = frag[:current_fade] * fade_in
-                crossfaded = overlap_existing + overlap_new
-                
-                # Concatena: parte precedente + crossfade + resto del nuovo frammento
-                result_audio = np.concatenate([
-                    result_audio[:-current_fade],
-                    crossfaded,
-                    frag[current_fade:]
-                ])
-            else:
-                # Se non è possibile fare crossfade, concatena direttamente
-                result_audio = np.concatenate([result_audio, frag])
-
-        # Normalizzazione finale e pulizia
-        if result_audio.size > 0:
-            # Rimuovi eventuali NaN o Inf
-            result_audio = np.nan_to_num(result_audio, nan=0.0, posinf=0.0, neginf=0.0)
+            # Crossfade semplice solo se entrambi i frammenti hanno dimensione sufficiente
+            crossfade_samples = min(256, len(result) // 4, len(next_fragment) // 4)
             
-            # Normalizza se necessario
-            max_val = np.max(np.abs(result_audio))
-            if max_val > 0:
-                result_audio = result_audio / max_val * 0.8
+            if crossfade_samples > 0 and len(result) >= crossfade_samples and len(next_fragment) >= crossfade_samples:
+                # Applica crossfade
+                fade_out = np.linspace(1, 0, crossfade_samples)
+                fade_in = np.linspace(0, 1, crossfade_samples)
+                
+                # Modifica la coda del risultato esistente
+                result[-crossfade_samples:] *= fade_out
+                
+                # Prepara l'inizio del prossimo frammento
+                next_start = next_fragment[:crossfade_samples] * fade_in
+                
+                # Sovrapponi le parti con crossfade
+                result[-crossfade_samples:] += next_start
+                
+                # Aggiungi il resto del frammento
+                if len(next_fragment) > crossfade_samples:
+                    result = np.concatenate([result, next_fragment[crossfade_samples:]])
             else:
-                result_audio = np.array([])
-
-        return result_audio
-
+                # Concatenazione semplice senza crossfade
+                result = np.concatenate([result, next_fragment])
+        
+        # Normalizzazione finale per evitare clipping
+        if len(result) > 0:
+            max_val = np.max(np.abs(result))
+            if max_val > 1.0:
+                result = result / max_val * 0.95
+        
+        return result
+        
     except Exception as e:
-        st.error(f"Errore in decostruzione_postmoderna: {e}")
-        st.error(f"Traceback: {traceback.format_exc()}")
-        return audio  # Ritorna l'audio originale in caso di errore
-
-
-def decomposizione_creativa(audio, sr, params):
-    """Decomposizione creativa con focus su discontinuità e shift emotivi"""
-    fragment_size = params['fragment_size']
-    discontinuity = params.get('discontinuity', 1.0)
-    emotional_shift = params.get('emotional_shift', 0.8)
-    chaos_level = params['chaos_level']
-
-    if audio.size == 0:
-        return np.array([])
-
-    fragment_samples = int(fragment_size * sr)
-    if fragment_samples <= 0:
+        st.warning(f"Errore nella decostruzione postmoderna: {e}")
         return audio
-
-    # Analizza struttura audio
-    structure = analyze_audio_structure(audio, sr)
-    
-    # Crea punti di taglio basati su onset e energia
-    cut_points = []
-    if structure['onset_times'].size > 0:
-        onset_samples = [int(t * sr) for t in structure['onset_times'] if t * sr < len(audio)]
-        cut_points.extend(onset_samples)
-    
-    # Aggiungi punti casuali per aumentare discontinuità
-    num_random_cuts = int(discontinuity * len(audio) / fragment_samples)
-    if num_random_cuts > 0 and len(audio) > fragment_samples:
-        random_cuts = random.sample(range(0, len(audio) - fragment_samples), 
-                                  min(num_random_cuts, len(audio) - fragment_samples))
-        cut_points.extend(random_cuts)
-    
-    # Ordina e rimuovi duplicati
-    cut_points = sorted(list(set(cut_points)))
-    if 0 not in cut_points:
-        cut_points.insert(0, 0)
-    if len(audio) not in cut_points:
-        cut_points.append(len(audio))
-    
-    # Crea frammenti
-    fragments = []
-    for i in range(len(cut_points) - 1):
-        start = cut_points[i]
-        end = cut_points[i + 1]
-        if end > start:
-            fragment = audio[start:end]
-            if fragment.size > 0:
-                fragments.append(fragment)
-    
-    if len(fragments) == 0:
-        return audio
-    
-    # Applica trasformazioni emotive
-    processed_fragments = []
-    for fragment in fragments:
-        if fragment.size == 0:
-            continue
-            
-        processed_frag = fragment.copy()
-        
-        # Shift emotivo attraverso pitch e tempo
-        if random.random() < emotional_shift:
-            try:
-                # Pitch shift per cambiare "mood"
-                pitch_change = random.uniform(-5, 5) * emotional_shift
-                processed_frag = safe_pitch_shift(processed_frag, sr, pitch_change)
-                
-                if processed_frag.size > 0:
-                    # Time stretch per cambiare "energia"
-                    time_change = random.uniform(0.7, 1.4) * (1 + emotional_shift * 0.3)
-                    processed_frag = safe_time_stretch(processed_frag, time_change)
-                    
-            except Exception as e:
-                st.warning(f"Trasformazione emotiva fallita: {e}")
-                processed_frag = fragment
-        
-        # Discontinuità attraverso manipolazioni aggressive
-        if processed_frag.size > 0 and random.random() < discontinuity * 0.5:
-            transform_type = random.choice(['reverse', 'stutter', 'gate', 'distort'])
-            
-            try:
-                if transform_type == 'reverse':
-                    processed_frag = processed_frag[::-1]
-                elif transform_type == 'stutter':
-                    # Ripeti sezioni brevi
-                    stutter_size = min(int(0.1 * sr), processed_frag.size // 4)
-                    if stutter_size > 0:
-                        stutter_section = processed_frag[:stutter_size]
-                        processed_frag = np.concatenate([stutter_section] * 3 + [processed_frag])
-                elif transform_type == 'gate':
-                    # Gating rhythmico
-                    gate_freq = random.uniform(8, 32)  # Hz
-                    gate_pattern = np.sin(2 * np.pi * gate_freq * np.arange(len(processed_frag)) / sr)
-                    gate_pattern = (gate_pattern > 0).astype(float) * 0.8 + 0.2
-                    processed_frag = processed_frag * gate_pattern
-                elif transform_type == 'distort':
-                    # Distorsione soft
-                    drive = 1 + discontinuity * 2
-                    processed_frag = np.tanh(processed_frag * drive) / drive
-                    
-            except Exception as e:
-                st.warning(f"Trasformazione di discontinuità fallita: {e}")
-                processed_frag = fragment
-        
-        if processed_frag.size > 0:
-            processed_fragments.append(processed_frag)
-    
-    if len(processed_fragments) == 0:
-        return audio
-    
-    # Riassemblaggio creativo
-    random.shuffle(processed_fragments)
-    
-    # Concatenazione con variazioni dinamiche
-    result_audio = processed_fragments[0]
-    
-    for frag in processed_fragments[1:]:
-        if frag.size == 0 or result_audio.size == 0:
-            continue
-            
-        # Varia il tipo di transizione
-        transition_type = random.choice(['crossfade', 'cut', 'overlap'])
-        
-        if transition_type == 'crossfade':
-            fade_duration = int(sr * random.uniform(0.01, 0.1))
-            current_fade = min(fade_duration, result_audio.size, frag.size)
-            
-            if current_fade > 0:
-                fade_out = np.linspace(1, 0, current_fade)
-                fade_in = np.linspace(0, 1, current_fade)
-                
-                overlap_existing = result_audio[-current_fade:] * fade_out
-                overlap_new = frag[:current_fade] * fade_in
-                crossfaded = overlap_existing + overlap_new
-                
-                result_audio = np.concatenate([
-                    result_audio[:-current_fade],
-                    crossfaded,
-                    frag[current_fade:]
-                ])
-            else:
-                result_audio = np.concatenate([result_audio, frag])
-                
-        elif transition_type == 'cut':
-            # Taglio netto
-            result_audio = np.concatenate([result_audio, frag])
-            
-        elif transition_type == 'overlap':
-            # Sovrapposizione additiva
-            overlap_duration = int(sr * random.uniform(0.02, 0.08))
-            current_overlap = min(overlap_duration, result_audio.size, frag.size)
-            
-            if current_overlap > 0:
-                # Sovrapposizione con volume ridotto
-                overlap_existing = result_audio[-current_overlap:] * 0.6
-                overlap_new = frag[:current_overlap] * 0.6
-                overlapped = overlap_existing + overlap_new
-                
-                result_audio = np.concatenate([
-                    result_audio[:-current_overlap],
-                    overlapped,
-                    frag[current_overlap:]
-                ])
-            else:
-                result_audio = np.concatenate([result_audio, frag])
-    
-    # Normalizzazione finale
-    if result_audio.size > 0:
-        result_audio = np.nan_to_num(result_audio, nan=0.0, posinf=0.0, neginf=0.0)
-        max_val = np.max(np.abs(result_audio))
-        if max_val > 0:
-            result_audio = result_audio / max_val * 0.8
-    
-    return result_audio
-
-
-def random_chaos(audio, sr, params):
-    """Generatore di chaos totale - ogni esecuzione è completamente diversa"""
-    if audio.size == 0:
-        return np.array([])
-    
-    chaos_level = params['chaos_level']
-    fragment_size = params['fragment_size']
-    
-    # Numero casuale di operazioni caotiche
-    num_operations = random.randint(3, int(8 * chaos_level))
-    
-    result_audio = audio.copy()
-    
-    for _ in range(num_operations):
-        if result_audio.size == 0:
-            break
-            
-        operation = random.choice([
-            'random_cuts', 'shuffle_chunks', 'reverse_sections',
-            'pitch_madness', 'time_chaos', 'granular_chaos',
-            'amplitude_chaos', 'frequency_chaos'
-        ])
-        
-        try:
-            if operation == 'random_cuts':
-                # Tagli completamente casuali
-                if len(result_audio) > 1000:
-                    num_cuts = random.randint(5, 20)
-                    cuts = sorted(random.sample(range(len(result_audio)), num_cuts))
-                    fragments = []
-                    for i in range(len(cuts) - 1):
-                        frag = result_audio[cuts[i]:cuts[i+1]]
-                        if frag.size > 0:
-                            fragments.append(frag)
-                    if fragments:
-                        random.shuffle(fragments)
-                        result_audio = np.concatenate(fragments)
-                        
-            elif operation == 'shuffle_chunks':
-                # Mescola blocchi dell'audio
-                chunk_size = int(fragment_size * sr * random.uniform(0.5, 2.0))
-                if chunk_size > 0 and len(result_audio) > chunk_size:
-                    chunks = [result_audio[i:i+chunk_size] 
-                             for i in range(0, len(result_audio), chunk_size)]
-                    chunks = [c for c in chunks if c.size > 0]
-                    if chunks:
-                        random.shuffle(chunks)
-                        result_audio = np.concatenate(chunks)
-                        
-            elif operation == 'reverse_sections':
-                # Inverti sezioni casuali
-                if len(result_audio) > 100:
-                    section_size = random.randint(100, len(result_audio) // 4)
-                    start = random.randint(0, max(0, len(result_audio) - section_size))
-                    end = min(start + section_size, len(result_audio))
-                    result_audio[start:end] = result_audio[start:end][::-1]
-                    
-            elif operation == 'pitch_madness':
-                # Pitch shift estremi
-                shift_amount = random.uniform(-24, 24) * chaos_level
-                result_audio = safe_pitch_shift(result_audio, sr, shift_amount)
-                
-            elif operation == 'time_chaos':
-                # Time stretch estremi
-                stretch_factor = random.uniform(0.1, 5.0) * chaos_level
-                result_audio = safe_time_stretch(result_audio, stretch_factor)
-                
-            elif operation == 'granular_chaos':
-                # Granular synthesis caotica
-                if result_audio.size > 1000:
-                    grain_size = random.randint(50, 500)
-                    grains = []
-                    for i in range(0, len(result_audio) - grain_size, grain_size // 2):
-                        grain = result_audio[i:i+grain_size]
-                        if random.random() < 0.7:  # 70% probabilità di includere il grano
-                            if random.random() < 0.5:
-                                grain = grain[::-1]  # Reverse casuale
-                            grains.append(grain)
-                    if grains:
-                        random.shuffle(grains)
-                        result_audio = np.concatenate(grains)
-                        
-            elif operation == 'amplitude_chaos':
-                # Modulazione d'ampiezza caotica
-                mod_freq = random.uniform(0.1, 50) * chaos_level
-                mod_depth = random.uniform(0.3, 1.0)
-                modulator = np.sin(2 * np.pi * mod_freq * np.arange(len(result_audio)) / sr)
-                result_audio = result_audio * (1 - mod_depth + mod_depth * modulator)
-                
-            elif operation == 'frequency_chaos':
-                # Filtri casuali (simulati con convoluzione semplice)
-                if result_audio.size > 100:
-                    filter_type = random.choice(['lowpass', 'highpass', 'bandpass'])
-                    # Filtro semplificato usando una convoluzione con kernel casuale
-                    kernel_size = random.randint(3, 21)
-                    if filter_type == 'lowpass':
-                        kernel = np.ones(kernel_size) / kernel_size  # Media mobile
-                    elif filter_type == 'highpass':
-                        kernel = np.array([-1, 2, -1]) / 4  # Differenza
-                        kernel = np.pad(kernel, (kernel_size//2 - 1, kernel_size//2 - 1))
-                    else:  # bandpass
-                        kernel = signal.windows.gaussian(kernel_size, kernel_size/6)
-                        kernel = kernel / np.sum(kernel)
-                    
-                    # Applica convoluzione se possibile
-                    if len(result_audio) > len(kernel):
-                        result_audio = np.convolve(result_audio, kernel, mode='same')
-                        
-        except Exception as e:
-            st.warning(f"Operazione chaos '{operation}' fallita: {e}")
-            continue
-    
-    # Normalizzazione finale
-    if result_audio.size > 0:
-        result_audio = np.nan_to_num(result_audio, nan=0.0, posinf=0.0, neginf=0.0)
-        max_val = np.max(np.abs(result_audio))
-        if max_val > 0:
-            result_audio = result_audio / max_val * 0.8
-    
-    return result_audio
