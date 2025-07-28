@@ -723,7 +723,7 @@ def decomposizione_creativa(audio, sr, params):
                 # NUOVO: Assicurati che mood_slice sia non vuoto e contenga un mood valido
                 mood_slice = mood_labels[i:i+frames_per_fragment]
                 if mood_slice.size > 0:
-                    # CORREZIONE APPLICATA QUI
+                    # CORREZIONE APPLICATA QUI (come da tua indicazione)
                     mood_slice_list = [int(m) for m in mood_slice]  # assicurati siano int
                     dominant_mood = max(set(mood_slice_list), key=mood_slice_list.count)
                     if dominant_mood in mood_fragments:
@@ -736,19 +736,22 @@ def decomposizione_creativa(audio, sr, params):
                 st.warning(f"Fragment at index {i} is empty. Skipping.")
 
 
-    # NUOVO: Filtra i mood che non hanno frammenti validi
+    # Filtra i mood che non hanno frammenti validi e verifica la presenza di frammenti validi
     mood_fragments = {k: [f for f in v if f.size > 0] for k, v in mood_fragments.items()}
-    mood_fragments = {k: v for k, v in mood_fragments.items() if v}
+    mood_fragments = {k: v for k, v in mood_fragments.items() if v} # Rimuove i mood senza frammenti
 
-    if len(mood_fragments) == 0:
-        st.warning("No valid fragments generated for any mood. Returning original audio as fallback.")
+    # Controllo di sicurezza per l'esistenza di frammenti validi dopo la pulizia
+    has_valid_fragments = any(isinstance(v, list) and any(isinstance(f, np.ndarray) and f.size > 0 for f in v) for v in mood_fragments.values())
+    if not has_valid_fragments:
+        st.warning("No valid fragments available for any mood after processing. Returning original audio as fallback.")
         return audio
 
+
     result_fragments = []
-    # NUOVO: Inizializza available_moods_init con un controllo esplicito
+    # Inizializza current_mood solo se ci sono mood disponibili con frammenti
     available_moods_init = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
     if len(available_moods_init) == 0:
-        st.warning("No initial available moods with valid fragments. Returning original audio as fallback.")
+        st.warning("No initial available moods with valid fragments to start with. Returning original audio as fallback.")
         return audio
     current_mood = random.choice(available_moods_init)
 
@@ -756,11 +759,11 @@ def decomposizione_creativa(audio, sr, params):
     max_iterations = total_expected_fragments * 2 if total_expected_fragments > 0 else 100
 
     iteration_count = 0
-    # NUOVO: Rafforza la condizione del while loop con isinstance
+    # Rafforza la condizione del while loop con isinstance e verifica i frammenti
     while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values() if isinstance(v, list)):
         iteration_count += 1
         
-        # NUOVO: Controlla che il current_mood esista e abbia frammenti
+        # Controlla che il current_mood esista e abbia frammenti
         if current_mood in mood_fragments and len(mood_fragments[current_mood]) > 0:
             fragment = random.choice(mood_fragments[current_mood])
             mood_fragments[current_mood].remove(fragment)
@@ -810,9 +813,10 @@ def decomposizione_creativa(audio, sr, params):
             if silence.size > 0:
                 result_fragments.append(silence)
     
-    # NUOVO: Filtra eventuali frammenti vuoti nel risultato finale prima di concatenare
+    # Filtra eventuali frammenti vuoti nel risultato finale prima di concatenare
     result_fragments = [f for f in result_fragments if f.size > 0]
 
+    # CORREZIONE APPLICATA QUI (come da tua indicazione)
     if len(result_fragments) > 0:
         result = np.concatenate(result_fragments)
     else:
@@ -959,7 +963,7 @@ def decompose_audio(audio, sr, method, params):
     }
 
     decompose_func = methods_map.get(method)
-    if decompose_func is None:
+    if decompose_func == None:
         st.error(f"Metodo {method} non riconosciuto")
         return audio
 
