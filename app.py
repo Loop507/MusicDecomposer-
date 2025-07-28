@@ -721,37 +721,171 @@ def decostruzione_postmoderna(audio, sr, params):
         st.warning(f"Errore nella decostruzione postmoderna: {e}")
         return audio
 
-# Funzione stub per decomposizione_creativa (da implementare)
 def decomposizione_creativa(audio, sr, params):
-    st.warning("Decomposizione Creativa: Funzionalità da implementare!")
-    # Qui andrebbe la logica per la decomposizione creativa
-    # Per ora, restituisce l'audio originale o un array vuoto
-    return audio * (1 - params.get('discontinuity', 1.0) * 0.1) # Esempio molto semplificato di effetto
+    """
+    Decomposizione Creativa:
+    Focus su discontinuità e shift emotivi, trasformazioni basate sull'analisi degli onset.
+    Genera variazioni espressive intense.
+    """
+    discontinuity = params.get('discontinuity', 1.0)
+    emotional_shift = params.get('emotional_shift', 0.8)
+    fragment_size = params['fragment_size']
+    chaos_level = params['chaos_level']
 
-# Funzione stub per random_chaos (da implementare)
+    if audio.size == 0:
+        return np.array([])
+
+    # Analisi degli onset per identificare i punti di "rottura" o importanza
+    try:
+        onset_frames = librosa.onset.onset_detect(y=audio, sr=sr, units='frames')
+        onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+    except Exception as e:
+        st.warning(f"Errore nel rilevamento degli onset per decomposizione_creativa: {e}")
+        onset_times = np.array([]) # Fallback a array vuoto
+
+    processed_fragments = []
+    current_time = 0.0
+
+    # Determina i punti di taglio basati su onset e fragment_size
+    cut_points = sorted(list(set([0] + [int(t * sr) for t in onset_times] + [int(current_time + fragment_size * sr * random.uniform(0.5, 1.5)) for _ in range(int(len(audio) / (fragment_size * sr * 2)))])))
+    cut_points = [p for p in cut_points if p < len(audio)]
+    if len(audio) not in cut_points:
+        cut_points.append(len(audio))
+    cut_points = sorted(list(set(cut_points)))
+
+    for i in range(len(cut_points) - 1):
+        start_sample = cut_points[i]
+        end_sample = cut_points[i+1]
+        
+        if end_sample <= start_sample:
+            continue
+
+        fragment = audio[start_sample:end_sample].copy()
+        if fragment.size == 0:
+            continue
+
+        # Applica discontinuità: salta o silenzia frammenti casualmente
+        if random.random() < discontinuity * 0.1: # Bassa probabilità di silenziare o saltare
+            if random.random() < 0.5: # 50% di probabilità di silenziare
+                fragment = np.zeros_like(fragment)
+            else: # 50% di probabilità di saltare (non aggiungerlo ai processed_fragments)
+                continue
+
+        # Applica shift emotivi: variazioni di pitch e tempo più pronunciate
+        if random.random() < emotional_shift * 0.4: # Probabilità di applicare shift emotivo
+            if random.random() < 0.5: # Pitch shift
+                shift_steps = random.uniform(-12 * emotional_shift, 12 * emotional_shift)
+                fragment = safe_pitch_shift(fragment, sr, shift_steps)
+            else: # Time stretch
+                stretch_rate = random.uniform(1 - 0.5 * emotional_shift, 1 + 0.5 * emotional_shift)
+                fragment = safe_time_stretch(fragment, stretch_rate)
+        
+        # Aggiungi un tocco di caos generale
+        if fragment.size > 0 and random.random() < chaos_level * 0.1:
+            fragment = fragment[::-1] # Inversione leggera
+
+        if fragment.size > 0:
+            processed_fragments.append(fragment)
+
+    if not processed_fragments:
+        return np.array([])
+
+    # Riassembla i frammenti
+    final_audio = np.concatenate(processed_fragments)
+
+    # Normalizzazione finale
+    if final_audio.size > 0:
+        max_val = np.max(np.abs(final_audio))
+        if max_val > 0:
+            final_audio = final_audio / max_val * 0.95
+    return final_audio
+
 def random_chaos(audio, sr, params):
-    st.warning("Random Chaos: Funzionalità da implementare!")
-    # Qui andrebbe la logica per il random chaos
-    # Esempio: applica pitch shift e time stretch molto aggressivi e casuali
+    """
+    Random Chaos: Ogni esecuzione è completamente diversa.
+    Operazioni casuali estreme, risultati imprevedibili e sperimentali.
+    """
+    chaos_level = params['chaos_level']
+    # fragment_size non viene usato direttamente in questa implementazione estrema
+    # structure_preservation non viene usato, dato che è "chaos"
+
     if audio.size == 0:
         return np.array([])
 
     processed_audio = audio.copy()
-    if random.random() < params['chaos_level'] * 0.5:
-        shift = random.uniform(-24, 24)
-        processed_audio = safe_pitch_shift(processed_audio, sr, shift)
-    if processed_audio.size > 0 and random.random() < params['chaos_level'] * 0.5:
-        stretch = random.uniform(0.1, 10.0)
-        processed_audio = safe_time_stretch(processed_audio, stretch)
-    if processed_audio.size > 0 and random.random() < params['chaos_level'] * 0.5:
-        processed_audio = processed_audio[::-1] # Inverti
-    
-    # Aggiungi un po' di rumore bianco
+    current_sr = sr # Mantieni traccia del sample rate che può cambiare con resampling
+
+    # Operazioni casuali con probabilità basata sul chaos_level
+    # Pitch Shift estremo
+    if random.random() < 0.5 * chaos_level:
+        shift_steps = random.uniform(-36, 36) # Fino a 3 ottave su/giù
+        processed_audio = safe_pitch_shift(processed_audio, current_sr, shift_steps)
+        if processed_audio.size == 0: return np.array([]) # Esci se diventa vuoto
+
+    # Time Stretch estremo
+    if random.random() < 0.5 * chaos_level:
+        stretch_rate = random.uniform(0.05, 20.0) # Estrema compressione o dilatazione
+        processed_audio = safe_time_stretch(processed_audio, stretch_rate)
+        if processed_audio.size == 0: return np.array([]) # Esci se diventa vuoto
+
+    # Inversione casuale (totale o di sezioni)
+    if random.random() < 0.3 * chaos_level:
+        if processed_audio.size > current_sr * 2 and random.random() < 0.5: # Inverti solo una sezione se abbastanza lunga
+            start_idx = random.randint(0, max(0, processed_audio.size - int(current_sr * random.uniform(0.5, 5.0))))
+            end_idx = min(processed_audio.size, start_idx + int(current_sr * random.uniform(0.5, 5.0)))
+            if end_idx > start_idx:
+                processed_audio[start_idx:end_idx] = processed_audio[start_idx:end_idx][::-1]
+        else: # Inverti tutto
+            processed_audio = processed_audio[::-1]
+        if processed_audio.size == 0: return np.array([])
+
+    # Aggiunta di rumore bianco o impulso casuale
+    if random.random() < 0.4 * chaos_level:
+        if processed_audio.size > 0:
+            noise_amplitude = random.uniform(0.01, 0.2) * chaos_level
+            noise = np.random.normal(0, noise_amplitude, processed_audio.size)
+            processed_audio = processed_audio + noise
+        if processed_audio.size == 0: return np.array([])
+
+    # Resampling casuale (cambia il "colore" del suono)
+    if random.random() < 0.3 * chaos_level:
+        new_sr_factor = random.uniform(0.2, 5.0) # Cambia il sample rate fino a 5x
+        new_sr = int(current_sr * new_sr_factor)
+        if new_sr > 0 and processed_audio.size > 0:
+            try:
+                processed_audio = librosa.resample(y=processed_audio, orig_sr=current_sr, target_sr=new_sr)
+                current_sr = new_sr # Aggiorna il sample rate corrente
+            except Exception as e:
+                st.warning(f"Errore nel resampling casuale: {e}")
+                # Continua con l'audio non risamplingato
+        if processed_audio.size == 0: return np.array([])
+
+    # Frammentazione e rimescolamento casuale estremo
+    if random.random() < 0.6 * chaos_level:
+        if processed_audio.size > 0:
+            # Crea frammenti casuali di dimensioni variabili
+            chaos_fragments = []
+            max_fragment_len = int(current_sr * random.uniform(0.1, 5.0)) # Frammenti da 0.1 a 5 sec
+            current_pos = 0
+            while current_pos < processed_audio.size:
+                frag_len = min(random.randint(int(current_sr * 0.05), max_fragment_len), processed_audio.size - current_pos)
+                if frag_len <= 0: break
+                chaos_fragments.append(processed_audio[current_pos : current_pos + frag_len])
+                current_pos += frag_len + int(current_sr * random.uniform(0, 0.5 * chaos_level)) # Aggiungi pause casuali
+
+            random.shuffle(chaos_fragments) # Rimescola completamente
+            if chaos_fragments:
+                processed_audio = np.concatenate(chaos_fragments)
+            else:
+                processed_audio = np.array([])
+        if processed_audio.size == 0: return np.array([])
+
+
+    # Normalizzazione finale per evitare clipping
     if processed_audio.size > 0:
-        noise_level = random.uniform(0.01, 0.1) * params['chaos_level']
-        noise = np.random.normal(0, noise_level, processed_audio.size)
-        processed_audio += noise
-    
+        max_val = np.max(np.abs(processed_audio))
+        if max_val > 0: # Evita divisione per zero
+            processed_audio = processed_audio / max_val * 0.95 # Normalizza al 95% del massimo
     return processed_audio
 
 # Logica principale per processare l'audio
