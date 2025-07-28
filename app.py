@@ -426,7 +426,6 @@ def decompose_audio(audio, sr, method, params):
 
 ## Struttura dell'Applicazione Streamlit
 
-Questa è la parte principale dell'app che interagisce con l'utente, carica l'audio, mostra i controlli e riproduce il risultato.
 ```python
 st.set_page_config(layout="wide", page_title="Decostruttore Audio Postmoderno")
 
