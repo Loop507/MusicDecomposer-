@@ -957,7 +957,13 @@ def generate_analysis_text(original_structure, decomposed_audio, sr, method, par
     """Genera un'analisi testuale dettagliata del processo di decomposizione."""
     analysis = f"## Analisi della Decomposizione\n\n"
     analysis += f"**Metodo Selezionato:** {method.replace('_', ' ').title()}\n"
-    analysis += f"**Durata Originale:** {len(original_structure['audio']) / sr:.2f} secondi\n"
+    
+    # Gestione robusta della durata originale
+    original_duration = 0
+    if 'audio' in original_structure and original_structure['audio'] is not None and original_structure['audio'].size > 0:
+        original_duration = len(original_structure['audio']) / sr
+    analysis += f"**Durata Originale:** {original_duration:.2f} secondi\n"
+    
     analysis += f"**Durata Decomposta:** {len(decomposed_audio) / sr:.2f} secondi\n\n"
 
     analysis += "### Parametri Utilizzati:\n"
@@ -966,8 +972,16 @@ def generate_analysis_text(original_structure, decomposed_audio, sr, method, par
     analysis += "\n"
 
     analysis += "### Dettagli Strutturali Originali:\n"
-    if original_structure['tempo'] > 0:
-        analysis += f"- **Tempo (BPM):** {original_structure['tempo']:.2f}\n"
+    # Modifica per gestire robustamente il tempo
+    tempo_val = original_structure.get('tempo', 0)
+    if np.isscalar(tempo_val): # Ensure it's a scalar before checking > 0 or formatting
+        if tempo_val > 0:
+            analysis += f"- **Tempo (BPM):** {tempo_val:.2f}\n"
+        else:
+            analysis += f"- **Tempo (BPM):** Non rilevato o 0 BPM\n"
+    else:
+        analysis += f"- **Tempo (BPM):** Dati non disponibili (potrebbe essere un array)\n"
+
     if original_structure['beats'].size > 0:
         analysis += f"- **Battiti Rilevati:** {len(original_structure['beats'])}\n"
     if original_structure['onset_times'].size > 0:
@@ -1034,6 +1048,10 @@ def generate_analysis_text(original_structure, decomposed_audio, sr, method, par
 processed_audio_data = None
 original_sr = None
 original_audio_info = None
+# Aggiunti per le waveform originali
+original_audio_data_for_plot = None
+original_sr_for_plot = None
+
 
 if uploaded_file is not None:
     st.audio(uploaded_file, format=uploaded_file.type, start_time=0)
@@ -1053,6 +1071,10 @@ if uploaded_file is not None:
                 if audio.size == 0:
                     st.error("Il file audio caricato è vuoto o non valido.")
                 else:
+                    # Salva l'audio originale e il sample rate per la visualizzazione e l'analisi
+                    original_audio_data_for_plot = audio.copy()
+                    original_sr_for_plot = sr
+
                     # Raccogli i parametri specifici del metodo
                     params = {
                         'fragment_size': fragment_size,
@@ -1077,7 +1099,7 @@ if uploaded_file is not None:
 
                     # Analizza la struttura originale (anche per l'analisi testuale)
                     original_audio_info = analyze_audio_structure(audio, sr)
-                    original_audio_info['audio'] = audio # Salva l'audio originale per il calcolo della durata
+                    original_audio_info['audio'] = audio # Salva l'audio originale per il calcolo della durata nell'analisi
 
                     # Esegui la decomposizione
                     if decomposition_method == "cut_up_sonoro":
@@ -1123,15 +1145,31 @@ if processed_audio_data is not None and processed_audio_data.size > 0 and origin
         st.error(f"Errore durante la creazione del file audio per la riproduzione: {e}")
         st.exception(e)
 
-    # Grafico della waveform
     st.subheader("Visualizzazione Waveform")
-    fig, ax = plt.subplots(figsize=(10, 3))
-    librosa.display.waveshow(processed_audio_data, sr=original_sr, ax=ax)
-    ax.set_title("Waveform del brano decomposto")
-    ax.set_xlabel("Tempo (s)")
-    ax.set_ylabel("Ampiezza")
-    st.pyplot(fig)
-    plt.close(fig) # Chiudi la figura per liberare memoria
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("##### Originale")
+        if original_audio_data_for_plot is not None and original_sr_for_plot is not None:
+            fig_original, ax_original = plt.subplots(figsize=(8, 2)) # Dimensioni più piccole
+            librosa.display.waveshow(original_audio_data_for_plot, sr=original_sr_for_plot, ax=ax_original)
+            ax_original.set_title("Waveform Originale")
+            ax_original.set_xlabel("Tempo (s)")
+            ax_original.set_ylabel("Ampiezza")
+            st.pyplot(fig_original)
+            plt.close(fig_original) # Chiudi la figura per liberare memoria
+        else:
+            st.info("Carica un brano per vedere la waveform originale.")
+
+    with col2:
+        st.markdown("##### Decomposto")
+        fig_decomposed, ax_decomposed = plt.subplots(figsize=(8, 2)) # Dimensioni più piccole
+        librosa.display.waveshow(processed_audio_data, sr=original_sr, ax=ax_decomposed)
+        ax_decomposed.set_title("Waveform Decomposta")
+        ax_decomposed.set_xlabel("Tempo (s)")
+        ax_decomposed.set_ylabel("Ampiezza")
+        st.pyplot(fig_decomposed)
+        plt.close(fig_decomposed) # Chiudi la figura per liberare memoria
 
     # Pulsante per il download
     st.download_button(
