@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import io
 import base64
+import traceback # Importa per i dettagli degli errori
 
 # Configurazione pagina
 st.set_page_config(
@@ -114,7 +115,7 @@ def analyze_audio_structure(audio, sr):
         if beats.ndim > 1:
             beats = beats.flatten()
     except Exception as e:
-        st.warning(f"Warning: Could not track beats, {e}. Setting tempo to 0.")
+        st.warning(f"Warning: Could not track beats, {e}. Setting tempo to 0. Trace: {traceback.format_exc()}")
         tempo = 0
         beats = np.array([])
 
@@ -122,31 +123,31 @@ def analyze_audio_structure(audio, sr):
     try:
         chroma = librosa.feature.chroma_stft(y=audio, sr=sr)
     except Exception as e:
-        st.warning(f"Warning: Could not extract chroma features, {e}.")
+        st.warning(f"Warning: Could not extract chroma features, {e}. Trace: {traceback.format_exc()}")
 
     mfcc = np.array([])
     try:
         mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
     except Exception as e:
-        st.warning(f"Warning: Could not extract MFCC features, {e}.")
+        st.warning(f"Warning: Could not extract MFCC features, {e}. Trace: {traceback.format_exc()}")
 
     spectral_centroids = np.array([])
     try:
         spectral_centroids = librosa.feature.spectral_centroid(y=audio, sr=sr)[0]
     except Exception as e:
-        st.warning(f"Warning: Could not extract spectral centroids, {e}.")
+        st.warning(f"Warning: Could not extract spectral centroids, {e}. Trace: {traceback.format_exc()}")
 
     onset_frames = np.array([])
     try:
         onset_frames = librosa.onset.onset_detect(y=audio, sr=sr)
     except Exception as e:
-        st.warning(f"Warning: Could not detect onsets, {e}.")
+        st.warning(f"Warning: Could not detect onsets, {e}. Trace: {traceback.format_exc()}")
 
     onset_times = np.array([])
     try:
         onset_times = librosa.times_like(onset_frames, sr=sr)
     except Exception as e:
-        st.warning(f"Warning: Could not convert onset frames to times, {e}.")
+        st.warning(f"Warning: Could not convert onset frames to times, {e}. Trace: {traceback.format_exc()}")
 
     return {
         'tempo': tempo,
@@ -295,7 +296,7 @@ def remix_destrutturato(audio, sr, params):
                     shift_steps = random.uniform(-7, 7)
                     fragment = librosa.effects.pitch_shift(fragment, sr=sr, n_steps=shift_steps)
                 except Exception as e:
-                    st.warning(f"Pitch shift failed for fragment in remix_destrutturato: {e}")
+                    st.warning(f"Pitch shift failed for fragment in remix_destrutturato: {e}. Trace: {traceback.format_exc()}")
                     fragment = np.array([]) # Marca il frammento come vuoto in caso di errore
 
             if fragment.size > 0 and random.random() < melody_fragmentation / 3.0: # Aggiunto controllo size
@@ -303,7 +304,7 @@ def remix_destrutturato(audio, sr, params):
                     stretch_factor = random.uniform(0.7, 1.4)
                     fragment = librosa.effects.time_stretch(fragment, rate=stretch_factor)
                 except Exception as e:
-                    st.warning(f"Time stretch failed for fragment in remix_destrutturato: {e}")
+                    st.warning(f"Time stretch failed for fragment in remix_destrutturato: {e}. Trace: {traceback.format_exc()}")
                     fragment = np.array([]) # Marca il frammento come vuoto in caso di errore
 
         if fragment.size > 0:
@@ -404,7 +405,7 @@ def musique_concrete(audio, sr, params):
                 window = signal.windows.gaussian(len(grain), std=len(grain)/6)
                 grain = grain * window
             except Exception as e:
-                st.warning(f"Gaussian window failed for grain in musique_concrete: {e}")
+                st.warning(f"Gaussian window failed for grain in musique_concrete: {e}. Trace: {traceback.format_exc()}")
                 grain = np.array([])
 
             if grain.size == 0:
@@ -418,7 +419,7 @@ def musique_concrete(audio, sr, params):
                     shift = random.uniform(-12, 12)
                     grain = librosa.effects.pitch_shift(grain, sr=sr, n_steps=shift)
                 except Exception as e:
-                    st.warning(f"Pitch shift failed for grain in musique_concrete: {e}")
+                    st.warning(f"Pitch shift failed for grain in musique_concrete: {e}. Trace: {traceback.format_exc()}")
                     grain = np.array([])
 
             if grain.size > 0 and random.random() < chaos_level / 3.0: # Aggiunto controllo size
@@ -426,7 +427,7 @@ def musique_concrete(audio, sr, params):
                     stretch = random.uniform(0.25, 4.0)
                     grain = librosa.effects.time_stretch(grain, rate=stretch)
                 except Exception as e:
-                    st.warning(f"Time stretch failed for grain in musique_concrete: {e}")
+                    st.warning(f"Time stretch failed for grain in musique_concrete: {e}. Trace: {traceback.format_exc()}")
                     grain = np.array([])
 
             if grain.size > 0:
@@ -507,7 +508,7 @@ def decostruzione_postmoderna(audio, sr, params):
         try:
             energy = librosa.feature.rms(y=audio, hop_length=hop_length)[0]
         except Exception as e:
-            st.warning(f"RMS calculation failed in decostruzione_postmoderna: {e}")
+            st.warning(f"RMS calculation failed in decostruzione_postmoderna: {e}. Trace: {traceback.format_exc()}")
             energy = np.array([])
 
     important_frames = np.array([])
@@ -552,11 +553,12 @@ def decostruzione_postmoderna(audio, sr, params):
 
         if frag_type == 'important' and random.random() < irony_level / 2.0:
             ironic_transforms = [
-                lambda x: x[::-1],
+                lambda x: x[::-1] if x.size > 0 else np.array([]),
                 lambda x: librosa.effects.pitch_shift(x, sr=sr, n_steps=-12) if x.size > 0 else np.array([]),
                 lambda x: librosa.effects.time_stretch(x, rate=0.25) if x.size > 0 else np.array([]),
-                lambda x: x * 0.1,
-                lambda x: np.tile(x[:len(x)//4 if len(x)//4 > 0 else 1], 4) if len(x) > 0 else np.array([]),
+                lambda x: x * 0.1 if x.size > 0 else np.array([]),
+                # FIX: Limita la dimensione massima del tile per evitare OOM
+                lambda x: np.tile(x[:min(len(x)//4 if len(x)//4 > 0 else 1, 1000)], 4) if len(x) > 0 else np.array([]),
             ]
             transform = random.choice(ironic_transforms)
             try:
@@ -564,9 +566,9 @@ def decostruzione_postmoderna(audio, sr, params):
                 if transformed_fragment.size > 0:
                     fragment = transformed_fragment
                 else:
-                    st.warning(f"Ironic transform produced empty fragment. Keeping original.")
+                    st.warning(f"Ironic transform produced empty fragment. Keeping original. Trace: {traceback.format_exc()}")
             except Exception as e:
-                st.warning(f"Ironic transform failed for fragment: {e}")
+                st.warning(f"Ironic transform failed for fragment: {e}. Keeping original. Trace: {traceback.format_exc()}")
                 # Fallback to original fragment if error, or empty if original was empty
                 fragment = fragment if fragment.size > 0 else np.array([])
 
@@ -584,9 +586,9 @@ def decostruzione_postmoderna(audio, sr, params):
                 if effected_fragment.size > 0:
                     fragment = effected_fragment
                 else:
-                    st.warning(f"Context shift effect produced empty fragment. Keeping original.")
+                    st.warning(f"Context shift effect produced empty fragment. Keeping original. Trace: {traceback.format_exc()}")
             except Exception as e:
-                st.warning(f"Context shift effect failed for fragment: {e}")
+                st.warning(f"Context shift effect failed for fragment: {e}. Trace: {traceback.format_exc()}")
                 fragment = fragment if fragment.size > 0 else np.array([])
 
 
@@ -672,20 +674,26 @@ def decomposizione_creativa(audio, sr, params):
                 st.warning("Scaled features are empty after scaling. Cannot perform KMeans clustering.")
             else:
                 # Determina il numero di cluster
-                n_clusters = min(8, features_scaled.shape[0] // 10)
+                # Il numero di cluster non può essere maggiore del numero di campioni
+                n_clusters = min(8, features_scaled.shape[0]) 
                 if n_clusters < 1:
                     n_clusters = 1 # Usa almeno 1 cluster se ci sono dati
+                
+                # Prevenire ValueError: n_init must be > 0. n_init predefinito è 10
+                # Se features_scaled.shape[0] < n_clusters, kmeans.fit_predict fallisce.
+                if features_scaled.shape[0] < n_clusters:
+                    st.warning(f"Number of samples ({features_scaled.shape[0]}) is less than n_clusters ({n_clusters}). Adjusting n_clusters.")
+                    n_clusters = features_scaled.shape[0] if features_scaled.shape[0] > 0 else 1
 
-                # Esegui KMeans
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
                 mood_labels = kmeans.fit_predict(features_scaled)
                 # DEBUG: st.write(f"DEBUG: KMeans successful, n_clusters={n_clusters}, mood_labels.shape={mood_labels.shape}")
 
         except ValueError as ve:
-            st.warning(f"KMeans clustering failed due to data issue (e.g., constant features): {ve}. Mood labels will be empty.")
+            st.warning(f"KMeans clustering failed due to data issue (e.g., constant features or not enough samples): {ve}. Mood labels will be empty. Trace: {traceback.format_exc()}")
             mood_labels = np.array([])
         except Exception as e:
-            st.warning(f"KMeans clustering failed unexpectedly: {e}. Mood labels will be empty.")
+            st.warning(f"KMeans clustering failed unexpectedly: {e}. Mood labels will be empty. Trace: {traceback.format_exc()}")
             mood_labels = np.array([])
     else:
         st.warning("Features for clustering could not be generated (likely chroma or MFCC were empty). Mood labels will be empty.")
@@ -787,9 +795,9 @@ def decomposizione_creativa(audio, sr, params):
                     if transformed_fragment.size > 0:
                         fragment = transformed_fragment
                     else:
-                        st.warning(f"Emotional shift transform produced empty fragment. Keeping original.")
+                        st.warning(f"Emotional shift transform produced empty fragment. Keeping original. Trace: {traceback.format_exc()}")
                 except Exception as e:
-                    st.warning(f"Emotional shift transform failed for fragment: {e}")
+                    st.warning(f"Emotional shift transform failed for fragment: {e}. Trace: {traceback.format_exc()}")
                     fragment = fragment if fragment.size > 0 else np.array([])
 
 
@@ -869,14 +877,14 @@ def random_chaos(audio, sr, params):
         try:
             temp_result = method(result, sr, random_params)
             if temp_result is None or (isinstance(temp_result, np.ndarray) and temp_result.size == 0 and result.size > 0):
-                st.warning(f"Metodo '{method.__name__}' ha prodotto un array vuoto/non valido. Mantenendo il risultato precedente.")
+                st.warning(f"Metodo '{method.__name__}' ha prodotto un array vuoto/non valido. Mantenendo il risultato precedente. Trace: {traceback.format_exc()}")
             elif isinstance(temp_result, np.ndarray):
                 result = temp_result
             else:
-                st.warning(f"Metodo '{method.__name__}' ha prodotto un risultato di tipo inatteso. Mantenendo il risultato precedente.")
+                st.warning(f"Metodo '{method.__name__}' ha prodotto un risultato di tipo inatteso. Mantenendo il risultato precedente. Trace: {traceback.format_exc()}")
 
         except Exception as e:
-            st.warning(f"Errore in {method.__name__}: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}. Mantenendo il risultato precedente.")
+            st.warning(f"Errore in {method.__name__}: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}. Mantenendo il risultato precedente. Trace: {traceback.format_exc()}")
             continue
 
     if result.size == 0:
@@ -901,7 +909,7 @@ def process_audio(audio_file, method, params):
             return None, None, None
 
     except Exception as e:
-        st.error(f"Errore nel caricamento del file audio: {e}")
+        st.error(f"Errore nel caricamento del file audio: {e}. Trace: {traceback.format_exc()}")
         return None, None, None
 
     try:
@@ -918,6 +926,7 @@ def process_audio(audio_file, method, params):
                 st.error("La decomposizione ha prodotto risultati vuoti per tutti i canali.")
                 return None, None, None
 
+            # Assicurati che tutti i canali abbiano la stessa lunghezza minima prima di concatenare
             min_length = min(len(ch) for ch in processed_channels)
             processed_channels = [ch[:min_length] for ch in processed_channels]
             processed_audio = np.array(processed_channels)
@@ -941,10 +950,15 @@ def process_audio(audio_file, method, params):
         return output_path, sr, audio_path
 
     except Exception as e:
-        st.error(f"Errore nel processing: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}")
+        st.error(f"Errore nel processing: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}. Trace: {traceback.format_exc()}")
         return None, None, None
     finally:
-        pass
+        # Pulisci i file temporanei
+        if 'audio_path' in locals() and os.path.exists(audio_path):
+            os.unlink(audio_path)
+        if 'output_path' in locals() and os.path.exists(output_path):
+            os.unlink(output_path)
+
 
 def decompose_audio(audio, sr, method, params):
     """Applica il metodo di decomposizione scelto"""
@@ -975,7 +989,7 @@ def decompose_audio(audio, sr, method, params):
         result = decompose_func(audio, sr, params)
 
         if result is None or not isinstance(result, np.ndarray) or result.size == 0:
-            st.warning(f"Il metodo '{method}' ha prodotto un risultato vuoto o non valido. Utilizzo l'audio originale come fallback.")
+            st.warning(f"Il metodo '{method}' ha prodotto un risultato vuoto o non valido. Utilizzo l'audio originale come fallback. Trace: {traceback.format_exc()}")
             return audio # Fallback all'audio originale
 
         # Pulisci da eventuali NaN o Inf prima della normalizzazione finale
@@ -990,7 +1004,7 @@ def decompose_audio(audio, sr, method, params):
         return result
 
     except Exception as e:
-        st.error(f"Errore nella decomposizione: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}")
+        st.error(f"Errore nella decomposizione del metodo '{method}': {e}. Dettagli tecnici: {e.__class__.__name__}: {e}. Trace: {traceback.format_exc()}")
         return audio
 
 def create_visualization(original_audio, processed_audio, sr):
@@ -1002,7 +1016,7 @@ def create_visualization(original_audio, processed_audio, sr):
             D_orig = librosa.amplitude_to_db(np.abs(librosa.stft(original_audio)), ref=np.max)
             librosa.display.specshow(D_orig, y_axis='hz', x_axis='time', sr=sr, ax=ax1)
         except Exception as e:
-            st.warning(f"Could not create spectrogram for original audio: {e}")
+            st.warning(f"Could not create spectrogram for original audio: {e}. Trace: {traceback.format_exc()}")
     ax1.set_title(' Audio Originale')
     ax1.set_ylabel('Frequenza (Hz)')
 
@@ -1011,7 +1025,7 @@ def create_visualization(original_audio, processed_audio, sr):
             D_proc = librosa.amplitude_to_db(np.abs(librosa.stft(processed_audio)), ref=np.max)
             librosa.display.specshow(D_proc, y_axis='hz', x_axis='time', sr=sr, ax=ax2)
         except Exception as e:
-            st.warning(f"Could not create spectrogram for processed audio: {e}")
+            st.warning(f"Could not create spectrogram for processed audio: {e}. Trace: {traceback.format_exc()}")
     ax2.set_title(' Audio Decomposto/Ricomposto')
     ax2.set_xlabel('Tempo (s)')
     ax2.set_ylabel('Frequenza (Hz)')
@@ -1145,7 +1159,7 @@ if uploaded_file is not None:
                     os.unlink(output_path)
                     os.unlink(original_audio_path_temp)
                 except Exception as e:
-                    st.warning(f"Errore durante la pulizia dei file temporanei: {e}")
+                    st.warning(f"Errore durante la pulizia dei file temporanei: {e}. Trace: {traceback.format_exc()}")
 
             else:
                 st.error(" Errore nel processing dell'audio. Il risultato potrebbe essere vuoto o non valido.")
