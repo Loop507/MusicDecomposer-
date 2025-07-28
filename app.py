@@ -673,7 +673,7 @@ def decomposizione_creativa(audio, sr, params):
         try:
             features_scaled = StandardScaler().fit_transform(features.T)
             # NUOVO: Controlla che features_scaled abbia almeno un campione per il clustering
-            if np.any(features)_scaled.shape[0] == 0:
+            if np.any(features) or features_scaled.shape[0] == 0:
                 st.warning("Scaled features are empty. Cannot perform KMeans clustering.")
             else:
                 n_clusters = min(8, features_scaled.shape[0] // 10)
