@@ -44,7 +44,7 @@ with st.sidebar:
             "random_chaos"
         ],
         format_func=lambda x: {
-            "cut_up_sonoro": "Cut-up Sonoro (Burroughs)",
+            "cut_up_sonoro": "Cut-up Sonoro",
             "remix_destrutturato": "Remix Destrutturato",
             "musique_concrete": "Musique Concrète",
             "decostruzione_postmoderna": "Decostruzione Postmoderna",
@@ -198,7 +198,7 @@ def safe_time_stretch(audio, rate):
         return audio
 
 def cut_up_sonoro(audio, sr, params):
-    """Implementa la tecnica cut-up di Burroughs applicata all'audio"""
+    """Implementa la tecnica cut-up applicata all'audio"""
     fragment_size = params['fragment_size']
     randomness = params.get('cut_randomness', 0.7)
     reassembly = params.get('reassembly_style', 'random')
@@ -1034,13 +1034,13 @@ if uploaded_file is not None:
                         # Mappa delle descrizioni delle tecniche
                         technique_descriptions = {
                             "cut_up_sonoro": """
-                            Il metodo **"Cut-up Sonoro"** si ispira alla tecnica letteraria di William S. Burroughs. Il brano viene frammentato in sezioni, che vengono poi **tagliate e riassemblate in un ordine casuale o predefinito** (come inversione o palindromo). Questo crea un effetto di collage sonoro, dove il significato originale è destrutturato per rivelare nuove connessioni e pattern imprevedibili. La musica diventa una forma di testo decostruito.
+                            Il metodo **"Cut-up Sonoro"** si ispira a una tecnica letteraria dove il testo viene frammentato e riassemblato. Il brano viene diviso in sezioni, che vengono poi **tagliate e riassemblate in un ordine casuale o predefinito** (come inversione o palindromo). Questo crea un effetto di collage sonoro, dove il significato originale è destrutturato per rivelare nuove connessioni e pattern imprevedibili. La musica diventa una forma di testo decostruito.
                             """,
                             "remix_destrutturato": """
-                            Il **"Remix Destrutturato"** mira a mantenere alcuni elementi riconoscibili del brano originale (come battiti o frammenti melodici), ma li **ricontestualizza in un nuovo arrangiamento**. Vengono applicate manipolazioni come pitch shift e time stretch ai frammenti, che poi vengono riorganizzati per creare un'esperienza d'ascolto che è sia familiare che sorprendentemente nuova, quasi una reinterpretazione post-moderna.
+                            Il **"Remix Destrutturato"** mira a mantenere alcuni elementi riconoscibili del brano originale (come battiti o frammenti melodici), ma li **ricontestualizza in un nuovo arrangiamento**. Vengono applicate manipolazioni come pitch shift e time stretch ai frammenti, che poi vengono riorganizzati per creare un'esperienza d'ascolto che è sia familiare che sorprendentemente nuova, quasi una reinterpretazione.
                             """,
                             "musique_concrete": """
-                            La **"Musique Concrète"** si basa sui principi sviluppati da Pierre Schaeffer. Questo metodo si concentra sulla **manipolazione di "grani" sonori** (piccolissimi frammenti dell'audio) attraverso tecniche come la sintesi granulare, l'inversione e il pitch/time shift. Il risultato è una texture sonora astratta, spesso non riconoscibile come musica nel senso tradizionale, che esplora le proprietà intrinseche del suono.
+                            La **"Musique Concrète"** si basa sui principi di manipolazione sonora. Questo metodo si concentra sulla **manipolazione di "grani" sonori** (piccolissimi frammenti dell'audio) attraverso tecniche come la sintesi granulare, l'inversione e il pitch/time shift. Il risultato è una texture sonora astratta, spesso non riconoscibile come musica nel senso tradizionale, che esplora le proprietà intrinseche del suono.
                             """,
                             "decostruzione_postmoderna": """
                             La **"Decostruzione Postmoderna"** applica un approccio critico al brano, **decostruendone il significato musicale originale** attraverso l'uso di ironia e spostamenti di contesto. Frammenti "importanti" vengono manipolati in modi inaspettati (es. volume ridotto, inversione), e vengono introdotti elementi di rottura o rumore. L'obiettivo è provocare una riflessione critica sull'opera e sulla sua percezione.
@@ -1062,7 +1062,7 @@ if uploaded_file is not None:
                         # Generazione del riassunto artistico in base al metodo
                         if decomposition_method == "cut_up_sonoro":
                             artistic_summary = f"""
-                            Con il metodo del **"Cut-up Sonoro"**, il brano originale è stato smembrato e ricombinato, trasformandosi in un'opera di arte sonora ispirata al caos controllato di William S. Burroughs. Ogni frammento, lungo circa {fragment_size:.1f} secondi, è stato trattato come una parola in una poesia decostruita.
+                            Con il metodo del **"Cut-up Sonoro"**, il brano originale è stato smembrato e ricombinato, trasformandosi in un'opera di arte sonora ispirata a tecniche di collage e frammentazione. Ogni frammento, lungo circa {fragment_size:.1f} secondi, è stato trattato come un elemento in una composizione decostruita.
                             Il livello di casualità dei tagli ({cut_randomness:.1f}) e lo stile di riassemblaggio ('{reassembly_style}') hanno permesso di **dislocare il significato musicale** originale, creando inaspettate giustapposizioni e ritmi frammentati. Il risultato è un collage sonoro che sfida la percezione tradizionale, invitando l'ascoltatore a trovare nuove narrazioni all'interno della frammentazione.
                             """
                         elif decomposition_method == "remix_destrutturato":
@@ -1175,8 +1175,8 @@ else:
         st.markdown("""
         ### Metodi di Decomposizione:
 
-        **Cut-up Sonoro (Burroughs)**
-        - Ispirati alla tecnica letteraria di William Burroughs
+        **Cut-up Sonoro**
+        - Ispirati a una tecnica letteraria di taglio e riassemblaggio
         - Taglia l'audio in frammenti e li riassembla casualmente
         - Ottimo per creare collage sonori sperimentali
 
@@ -1185,7 +1185,7 @@ else:
         - Ideale per remix creativi e riarrangiamenti
 
         **Musique Concrète**
-        - Basato sui principi di Pierre Schaeffer
+        - Basato sui principi di manipolazione sonora
         - Utilizza granular synthesis e manipolazioni concrete
         - Perfetto per texture sonore astratte
 
