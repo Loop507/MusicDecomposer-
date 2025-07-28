@@ -13,6 +13,413 @@ import matplotlib.pyplot as plt
 import io
 import traceback # Importa per i dettagli degli errori
 
+import gc  # Garbage collector
+# import psutil # Necessario per check_memory_usage, assicurati di installarlo con pip install psutil
+
+# OTTIMIZZAZIONI PRINCIPALI PER EVITARE CRASH
+
+# 1. PROCESSING IN CHUNKS - Elabora audio a pezzi invece che tutto insieme
+def process_audio_in_chunks(audio, sr, processing_func, params, chunk_duration=10.0):
+    """
+    Elabora audio lunghi a pezzi per evitare problemi di memoria
+    """
+    chunk_samples = int(chunk_duration * sr)
+    
+    if len(audio) <= chunk_samples:
+        # Audio corto, elabora normalmente
+        return processing_func(audio, sr, params)
+    
+    # Audio lungo - elabora a chunks con overlap
+    overlap_samples = int(0.5 * sr)  # 0.5 sec di overlap
+    chunks_processed = []
+    
+    for start in range(0, len(audio), chunk_samples - overlap_samples):
+        end = min(start + chunk_samples, len(audio))
+        chunk = audio[start:end]
+        
+        if chunk.size > 0:
+            # Processa il chunk
+            processed_chunk = processing_func(chunk, sr, params)
+            
+            if processed_chunk.size > 0:
+                chunks_processed.append(processed_chunk)
+            
+            # Forza garbage collection dopo ogni chunk
+            gc.collect()
+    
+    if chunks_processed:
+        # Unisci i chunks con crossfade
+        return merge_chunks_with_crossfade(chunks_processed, sr)
+    else:
+        return np.array([])
+
+def merge_chunks_with_crossfade(chunks, sr, fade_duration=0.1):
+    """Unisce chunks con crossfade per evitare click"""
+    if len(chunks) == 1:
+        return chunks[0]
+    
+    fade_samples = int(fade_duration * sr)
+    result = chunks[0].copy()
+    
+    for chunk in chunks[1:]:
+        if chunk.size == 0:
+            continue
+            
+        # Crossfade semplice
+        crossfade_len = min(fade_samples, len(result), len(chunk))
+        
+        if crossfade_len > 0:
+            fade_out = np.linspace(1, 0, crossfade_len)
+            fade_in = np.linspace(0, 1, crossfade_len)
+            
+            # Overlap
+            result[-crossfade_len:] *= fade_out
+            result[-crossfade_len:] += chunk[:crossfade_len] * fade_in
+            
+            # Aggiungi il resto
+            if len(chunk) > crossfade_len:
+                result = np.concatenate([result, chunk[crossfade_len:]])
+        else:
+            result = np.concatenate([result, chunk])
+    
+    return result
+
+# 2. OTTIMIZZAZIONI MEMORY-EFFICIENT per ogni metodo
+
+def optimized_cut_up_sonoro(audio, sr, params):
+    """Versione ottimizzata di cut_up_sonoro"""
+    fragment_size = params['fragment_size']
+    randomness = params.get('cut_randomness', 0.7)
+    reassembly = params.get('reassembly_style', 'random')
+
+    if audio.size == 0:
+        return np.array([])
+
+    fragment_samples = max(int(fragment_size * sr), 1024)  # Minimo 1024 samples
+    
+    # Pre-calcola gli indici invece di creare array
+    num_fragments = len(audio) // fragment_samples
+    fragment_indices = []
+    
+    for i in range(num_fragments):
+        start = i * fragment_samples
+        end = min(start + fragment_samples, len(audio))
+        if end > start:
+            fragment_indices.append((start, end))
+    
+    # Processa solo quello che serve
+    processed_fragments = []
+    
+    for start, end in fragment_indices:
+        fragment = audio[start:end].copy()  # Copy per evitare reference
+        
+        if random.random() < randomness:
+            # Manipolazioni LEGGERE
+            variation = random.uniform(0.8, 1.2)  # Ridotto range
+            if variation != 1.0:
+                new_length = int(len(fragment) * variation)
+                if new_length > 0 and new_length != len(fragment):
+                    if new_length < len(fragment):
+                        fragment = fragment[:new_length]
+                    else:
+                        # Interpolazione semplice
+                        indices = np.linspace(0, len(fragment)-1, new_length)
+                        fragment = np.interp(indices, np.arange(len(fragment)), fragment)
+        
+        if fragment.size > 0:
+            processed_fragments.append(fragment)
+        
+        # Libera memoria
+        del fragment
+    
+    if not processed_fragments:
+        return np.array([])
+    
+    # Riassembla
+    if reassembly == 'random':
+        random.shuffle(processed_fragments)
+    elif reassembly == 'reverse':
+        processed_fragments = [frag[::-1] for frag in processed_fragments]
+        processed_fragments.reverse()
+    elif reassembly == 'palindrome': # Aggiungi la gestione per palindrome, copiando logica dalla versione precedente se necessario.
+        valid_fragments = [frag for frag in processed_fragments if frag.size > 0]
+        processed_fragments = valid_fragments + [frag for frag in valid_fragments[::-1]]
+    elif reassembly == 'spiral': # Aggiungi la gestione per spiral
+        new_fragments = []
+        start_idx, end_idx = 0, len(processed_fragments) - 1
+        while start_idx <= end_idx:
+            if start_idx < len(processed_fragments) and processed_fragments[start_idx].size > 0 and len(new_fragments) % 2 == 0:
+                new_fragments.append(processed_fragments[start_idx])
+                start_idx += 1
+            elif end_idx < len(processed_fragments) and processed_fragments[end_idx].size > 0 and len(new_fragments) % 2 != 0:
+                new_fragments.append(processed_fragments[end_idx])
+                end_idx -= 1
+            else:
+                if len(new_fragments) % 2 == 0:
+                    start_idx += 1
+                else:
+                    end_idx += 1
+        processed_fragments = new_fragments
+        
+    # Concatena efficientemente
+    total_length = sum(len(frag) for frag in processed_fragments)
+    if total_length == 0: # Caso in cui tutti i frammenti sono vuoti
+        return np.array([])
+    
+    result = np.empty(total_length, dtype=audio.dtype)
+    
+    current_pos = 0
+    for frag in processed_fragments:
+        if frag.size > 0: # Assicurati che il frammento non sia vuoto
+            result[current_pos:current_pos + len(frag)] = frag
+            current_pos += len(frag)
+    
+    # Ritaglia l'array risultante se la lunghezza finale è inferiore a total_length a causa di frammenti vuoti
+    return result[:current_pos]
+
+
+def optimized_musique_concrete(audio, sr, params):
+    """Versione ottimizzata di musique_concrete - meno memory intensive"""
+    grain_size = max(params.get('grain_size', 0.1), 0.05)  # Grani più grandi
+    texture_density = min(params.get('texture_density', 1.0), 2.0)  # Limite densità
+    chaos_level = params['chaos_level']
+
+    if audio.size == 0:
+        return np.array([])
+
+    grain_samples = max(int(grain_size * sr), 512)  # Minimo 512 samples
+    
+    # Limita il numero di grani
+    max_grains = min(500, len(audio) // grain_samples)  # MAX 500 grani
+    if max_grains <= 0 and len(audio) > 0: # Se l'audio è molto corto, ma non vuoto
+        max_grains = 1
+        grain_samples = len(audio) # Prendi l'intero audio come un grano
+
+    # Campiona posizioni invece di processare tutto
+    if max_grains > 0 and len(audio) >= grain_samples:
+        positions = np.linspace(0, len(audio) - grain_samples, max_grains).astype(int)
+    elif len(audio) > 0: # Se l'audio è molto corto, prendi solo la posizione 0
+        positions = np.array([0])
+    else: # Audio vuoto
+        return np.array([])
+
+    grains = []
+    for pos in positions:
+        grain = audio[pos:pos + grain_samples].copy()
+        
+        if grain.size == 0:
+            continue
+            
+        # Manipolazioni LEGGERE
+        if random.random() < min(chaos_level / 4.0, 0.3):  # Ridotta probabilità
+            if random.random() < 0.5:
+                grain = grain[::-1]  # Solo reverse, no pitch/time stretch pesanti
+            else:
+                # Semplice amplitude modulation
+                grain *= random.uniform(0.5, 1.5)
+        
+        grains.append(grain)
+        
+        if len(grains) >= max_grains:
+            break
+    
+    if not grains:
+        return np.array([])
+    
+    # Output length limitato
+    max_output_length = int(len(audio) * min(1.5, 1 + texture_density * 0.3))
+    if max_output_length <= 0:
+        return np.array([])
+
+    result = np.zeros(max_output_length, dtype=audio.dtype)
+    
+    # Posiziona grani
+    num_grains_to_use = min(len(grains), int(len(grains) * texture_density))
+    if num_grains_to_use <= 0:
+        return np.array([])
+
+    selected_grains = random.sample(grains, num_grains_to_use)
+    
+    for grain in selected_grains:
+        if grain.size == 0:
+            continue
+        
+        # Clip grain if it's too long for the result buffer or max_output_length
+        if grain.size > max_output_length:
+            grain = grain[:max_output_length]
+
+        if grain.size >= max_output_length: # If grain is still too big after clipping
+            continue # Skip this grain if it's still too large for the max_output_length
+
+        max_start = max_output_length - grain.size
+        if max_start >= 0: # Ensure max_start is not negative
+            start_pos = random.randint(0, max_start)
+            end_pos = start_pos + grain.size
+            
+            # Somma invece di sovrascrivere
+            result[start_pos:end_pos] += grain * random.uniform(0.2, 0.8)
+    
+    # Normalizza
+    max_val = np.max(np.abs(result))
+    if max_val > 0:
+        result = result / max_val * 0.8
+    else:
+        return np.array([]) # Se il risultato è tutto zero, restituisci un array vuoto
+    
+    return result
+
+def ultra_optimized_random_chaos(audio, sr, params):
+    """Versione MOLTO ottimizzata di random_chaos - evita operazioni pesanti"""
+    chaos_level = min(params['chaos_level'], 2.0)  # Limita chaos
+    
+    if audio.size == 0:
+        return np.array([])
+    
+    processed_audio = audio.copy()
+    
+    # SOLO operazioni leggere, NO pitch_shift/time_stretch che crashano
+    
+    # 1. Reverse sections (VELOCE)
+    if random.random() < 0.3 * chaos_level:
+        section_length = min(int(sr * 2), len(processed_audio) // 4)  # Max 2 sec
+        if section_length > 0 and len(processed_audio) >= section_length: # Check if audio is long enough
+            start = random.randint(0, len(processed_audio) - section_length)
+            processed_audio[start:start + section_length] = processed_audio[start:start + section_length][::-1]
+    
+    # 2. Volume variations (VELOCE)
+    if random.random() < 0.4 * chaos_level:
+        num_sections = min(10, max(1, int(chaos_level * 5))) # Ensure at least 1 section if possible
+        if len(processed_audio) > 0:
+            section_length = len(processed_audio) // num_sections
+        else:
+            section_length = 0
+
+        if section_length > 0:
+            for i in range(num_sections):
+                start = i * section_length
+                end = min(start + section_length, len(processed_audio))
+                if end > start:
+                    volume_factor = random.uniform(0.3, 1.5)
+                    processed_audio[start:end] *= volume_factor
+        elif len(processed_audio) > 0: # Apply to whole audio if too short for sections
+            volume_factor = random.uniform(0.3, 1.5)
+            processed_audio *= volume_factor
+            
+    # 3. Simple noise (VELOCE)
+    if random.random() < 0.2 * chaos_level:
+        if processed_audio.size > 0:
+            noise_level = min(0.05, chaos_level * 0.02)
+            noise = np.random.normal(0, noise_level, len(processed_audio))
+            processed_audio += noise
+    
+    # 4. Fragment shuffling (MODERATO)
+    if random.random() < 0.5 * chaos_level:
+        if processed_audio.size > 0:
+            fragment_length = max(int(sr * 0.5), 1024)  # Min 0.5 sec
+            num_fragments = min(20, len(processed_audio) // fragment_length)  # MAX 20 frammenti
+            if num_fragments <= 0 and len(processed_audio) > 0: # If audio is very short, make it one fragment
+                num_fragments = 1
+                fragment_length = len(processed_audio)
+
+            fragments = []
+            for i in range(num_fragments):
+                start = i * fragment_length
+                end = min(start + fragment_length, len(processed_audio))
+                if end > start:
+                    fragments.append(processed_audio[start:end].copy())
+            
+            if fragments:
+                random.shuffle(fragments)
+                # Riassembla
+                new_length = sum(len(f) for f in fragments)
+                if new_length > 0:
+                    new_audio = np.empty(new_length, dtype=audio.dtype)
+                    pos = 0
+                    for frag in fragments:
+                        new_audio[pos:pos + len(frag)] = frag
+                        pos += len(frag)
+                    processed_audio = new_audio
+                else:
+                    processed_audio = np.array([])
+            else:
+                processed_audio = np.array([]) # No fragments generated
+        
+    # Normalizza
+    if processed_audio.size > 0:
+        max_val = np.max(np.abs(processed_audio))
+        if max_val > 0:
+            processed_audio = processed_audio / max_val * 0.95
+    else:
+        return np.array([]) # Se l'audio è tutto zero, restituisci un array vuoto
+        
+    return processed_audio
+
+# 3. WRAPPER PRINCIPALE - USA QUESTO INVECE DELLE FUNZIONI ORIGINALI
+def safe_process_audio(audio, sr, method, params):
+    """
+    Wrapper sicuro che usa processing in chunks quando necessario
+    """
+    
+    # Determina se usare chunks (per audio > 30 secondi)
+    audio_duration = len(audio) / sr
+    use_chunks = audio_duration > 30.0
+    
+    if method == "cut_up_sonoro":
+        if use_chunks:
+            return process_audio_in_chunks(audio, sr, optimized_cut_up_sonoro, params)
+        else:
+            return optimized_cut_up_sonoro(audio, sr, params)
+    
+    elif method == "musique_concrete":
+        if use_chunks:
+            return process_audio_in_chunks(audio, sr, optimized_musique_concrete, params)
+        else:
+            return optimized_musique_concrete(audio, sr, params)
+    
+    elif method == "random_chaos":
+        if use_chunks:
+            return process_audio_in_chunks(audio, sr, ultra_optimized_random_chaos, params)
+        else:
+            return ultra_optimized_random_chaos(audio, sr, params)
+    
+    # Per gli altri metodi, usa le versioni originali ma con chunks se necessario
+    elif method == "remix_destrutturato":
+        if use_chunks:
+            return process_audio_in_chunks(audio, sr, remix_destrutturato, params, chunk_duration=15.0)
+        else:
+            return remix_destrutturato(audio, sr, params)
+    
+    elif method == "decostruzione_postmoderna":
+        # Già ottimizzato nel tuo codice
+        if use_chunks:
+            return process_audio_in_chunks(audio, sr, decostruzione_postmoderna, params, chunk_duration=20.0)
+        else:
+            return decostruzione_postmoderna(audio, sr, params)
+    
+    elif method == "decomposizione_creativa":
+        if use_chunks:
+            return process_audio_in_chunks(audio, sr, decomposizione_creativa, params, chunk_duration=15.0)
+        else:
+            return decomposizione_creativa(audio, sr, params)
+    
+    else:
+        st.error(f"Metodo sconosciuto: {method}")
+        return np.array([])
+
+# 4. MEMORY MONITORING
+def check_memory_usage():
+    """Controlla l'uso della memoria e forza garbage collection se necessario"""
+    try:
+        import psutil
+        memory_percent = psutil.virtual_memory().percent
+        if memory_percent > 75:
+            gc.collect()  # Forza garbage collection
+            st.warning(f"Memoria alta ({memory_percent:.1f}%) - pulizia automatica eseguita")
+        return memory_percent
+    except ImportError:
+        # st.info("Modulo 'psutil' non trovato. Impossibile monitorare la memoria. (pip install psutil)")
+        return 0
+
 # Configurazione pagina
 st.set_page_config(
     page_title="MusicDecomposer by loop507",
@@ -265,7 +672,7 @@ def cut_up_sonoro(audio, sr, params):
                 if len(new_fragments) % 2 == 0:
                     start += 1
                 else:
-                    end -= 1
+                    end += 1 # Correzione: deve avanzare anche end se non si aggiunge nulla
         fragments = new_fragments
 
     if len(fragments) > 0:
@@ -949,21 +1356,12 @@ if uploaded_file is not None:
                         'discontinuity': discontinuity,
                         'emotional_shift': emotional_shift
                     })
+                
+                # Controlla l'uso della memoria prima dell'elaborazione
+                check_memory_usage()
 
-                # Applica il metodo di decomposizione selezionato
-                processed_audio = np.array([]) # Inizializza per sicurezza
-                if decomposition_method == "cut_up_sonoro":
-                    processed_audio = cut_up_sonoro(audio, sr, params)
-                elif decomposition_method == "remix_destrutturato":
-                    processed_audio = remix_destrutturato(audio, sr, params)
-                elif decomposition_method == "musique_concrete":
-                    processed_audio = musique_concrete(audio, sr, params)
-                elif decomposition_method == "decostruzione_postmoderna":
-                    processed_audio = decostruzione_postmoderna(audio, sr, params)
-                elif decomposition_method == "decomposizione_creativa":
-                    processed_audio = decomposizione_creativa(audio, sr, params)
-                elif decomposition_method == "random_chaos":
-                    processed_audio = random_chaos(audio, sr, params)
+                # Applica il metodo di decomposizione selezionato tramite il wrapper ottimizzato
+                processed_audio = safe_process_audio(audio, sr, decomposition_method, params)
 
                 # Verifica che l'elaborazione sia andata a buon fine
                 if processed_audio.size == 0:
