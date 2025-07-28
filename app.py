@@ -897,7 +897,7 @@ if uploaded_file is not None:
             tmp_file_path = tmp_file.name
 
         # Leggi l'audio
-        audio, sr = librosa.load(tmp_file_path, sr=None)
+        audio, sr = librosa.load(tmp_file_path, sr=None) 
         
         # Mostra informazioni del file originale
         col1, col2, col3 = st.columns(3)
@@ -908,8 +908,8 @@ if uploaded_file is not None:
         with col3:
             st.metric("Canali", "Mono")
 
-        # Player per l'audio originale
-        st.subheader("🎵 Audio Originale")
+        # Player per l'audio originale (rimossa emoji)
+        st.subheader("Audio Originale")
         st.audio(uploaded_file, format='audio/wav')
 
         # Pulsante per processare
@@ -982,8 +982,10 @@ if uploaded_file is not None:
                         # Metriche dell'audio processato
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.metric("Nuova Durata", f"{len(processed_audio)/sr:.2f} sec", 
-                                    f"{((len(processed_audio)/sr) - (len(audio)/sr)):.2f} sec")
+                            new_duration = len(processed_audio)/sr
+                            original_duration = len(audio)/sr
+                            st.metric("Nuova Durata", f"{new_duration:.2f} sec", 
+                                    f"{(new_duration - original_duration):.2f} sec")
                         with col2:
                             original_rms = np.sqrt(np.mean(audio**2))
                             processed_rms = np.sqrt(np.mean(processed_audio**2))
@@ -999,10 +1001,10 @@ if uploaded_file is not None:
                                 spectral_diff = np.mean(np.abs(spec_proc - spec_orig))
                             else:
                                 spectral_diff = 0.0
-                            st.metric("Spectral Change", f"{spectral_diff:.2e}")
+                            st.metric("Variazione Spettrale", f"{spectral_diff:.2e}") # Rinominato per chiarezza
 
-                        # Player per l'audio processato
-                        st.subheader("🎨 Audio Decomposto e Ricomposto")
+                        # Player per l'audio processato (rimossa emoji)
+                        st.subheader("Audio Decomposto e Ricomposto")
                         
                         # Leggi il file processato per il player
                         with open(processed_tmp_path, 'rb') as audio_file:
@@ -1029,6 +1031,51 @@ if uploaded_file is not None:
                             use_container_width=True
                         )
 
+                        # Mappa delle descrizioni delle tecniche
+                        technique_descriptions = {
+                            "cut_up_sonoro": """
+                            Il metodo **"Cut-up Sonoro"** si ispira alla tecnica letteraria di William S. Burroughs. Il brano viene frammentato in sezioni, che vengono poi **tagliate e riassemblate in un ordine casuale o predefinito** (come inversione o palindromo). Questo crea un effetto di collage sonoro, dove il significato originale è destrutturato per rivelare nuove connessioni e pattern imprevedibili. La musica diventa una forma di testo decostruito.
+                            """,
+                            "remix_destrutturato": """
+                            Il **"Remix Destrutturato"** mira a mantenere alcuni elementi riconoscibili del brano originale (come battiti o frammenti melodici), ma li **ricontestualizza in un nuovo arrangiamento**. Vengono applicate manipolazioni come pitch shift e time stretch ai frammenti, che poi vengono riorganizzati per creare un'esperienza d'ascolto che è sia familiare che sorprendentemente nuova, quasi una reinterpretazione post-moderna.
+                            """,
+                            "musique_concrete": """
+                            La **"Musique Concrète"** si basa sui principi sviluppati da Pierre Schaeffer. Questo metodo si concentra sulla **manipolazione di "grani" sonori** (piccolissimi frammenti dell'audio) attraverso tecniche come la sintesi granulare, l'inversione e il pitch/time shift. Il risultato è una texture sonora astratta, spesso non riconoscibile come musica nel senso tradizionale, che esplora le proprietà intrinseche del suono.
+                            """,
+                            "decostruzione_postmoderna": """
+                            La **"Decostruzione Postmoderna"** applica un approccio critico al brano, **decostruendone il significato musicale originale** attraverso l'uso di ironia e spostamenti di contesto. Frammenti "importanti" vengono manipolati in modi inaspettati (es. volume ridotto, inversione), e vengono introdotti elementi di rottura o rumore. L'obiettivo è provocare una riflessione critica sull'opera e sulla sua percezione.
+                            """,
+                            "decomposizione_creativa": """
+                            La **"Decomposizione Creativa"** si focalizza sulla creazione di **discontinuità e "shift emotivi"** intensi. Utilizzando l'analisi degli onset (punti di attacco del suono), il brano viene frammentato in modo dinamico. I frammenti vengono poi trasformati con variazioni pronunciate di pitch e tempo, e alcuni possono essere silenziati o saltati per generare un'esperienza sonora ricca di espressività e rotture inattese.
+                            """,
+                            "random_chaos": """
+                            Il metodo **"Random Chaos"** è progettato per produrre **risultati altamente imprevedibili e sperimentali**. Ogni esecuzione è unica. Vengono applicate operazioni casuali ed estreme come pitch shift e time stretch massivi, inversioni casuali di sezioni, aggiunta di rumore e resampling. Questo metodo esplora i limiti della manipolazione audio, portando a trasformazioni radicali e spesso disorientanti.
+                            """
+                        }
+                        
+                        selected_method_description = technique_descriptions.get(decomposition_method, "Nessuna descrizione disponibile per questo metodo.")
+
+
+                        # Sezione "Analisi della Decomposizione"
+                        st.subheader("Analisi della Decomposizione")
+                        st.markdown(f"**Metodo Applicato:** `{decomposition_method.replace('_', ' ').title()}`")
+                        st.markdown(selected_method_description) # Aggiunge la descrizione della tecnica
+                        st.markdown(f"**Durata Originale:** `{original_duration:.2f} secondi`")
+                        st.markdown(f"**Nuova Durata:** `{new_duration:.2f} secondi`")
+
+                        st.markdown("---")
+                        st.markdown("### Riepilogo dei Cambiamenti Quantitativi:") # Titolo più specifico
+
+                        analysis_text = f"""
+                        * **Durata:** L'audio originale, di **{original_duration:.2f} secondi**, è stato trasformato in un brano di **{new_duration:.2f} secondi**. Questo indica un {'allungamento' if new_duration > original_duration else 'accorciamento'} di **{abs(new_duration - original_duration):.2f} secondi**.
+                        * **Energia RMS (Volume Percepito):** Il livello di energia RMS (Root Mean Square), che è un indicatore del volume percepito, ha avuto una variazione di **{processed_rms - original_rms:.4f}**. Questo significa che il suono risultante è generalmente {'più forte' if processed_rms > original_rms else 'più debole' if processed_rms < original_rms else 'simile'} in termini di volume medio.
+                        * **Variazione Spettrale:** La variazione spettrale di **{spectral_diff:.2e}** quantifica quanto è cambiato il "colore" o la distribuzione delle frequenze rispetto all'originale. Un valore più alto indica una trasformazione più significativa del timbro e della texture sonora.
+
+                        Questi cambiamenti riflettono l'impatto dei parametri scelti (`Dimensione Frammenti: {fragment_size}s`, `Livello di Chaos: {chaos_level}`, `Conservazione Struttura: {structure_preservation}`).
+                        """
+                        st.markdown(analysis_text)
+
+
                         # Visualizzazione forme d'onda (opzionale)
                         with st.expander("📊 Confronto Forme d'Onda"):
                             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
@@ -1036,7 +1083,7 @@ if uploaded_file is not None:
                             # Originale
                             time_orig = np.linspace(0, len(audio)/sr, len(audio))
                             ax1.plot(time_orig, audio, color='blue', alpha=0.7)
-                            ax1.set_title("Audio Originale")
+                            ax1.set_title("Forma d'Onda Originale")
                             ax1.set_xlabel("Tempo (sec)")
                             ax1.set_ylabel("Ampiezza")
                             ax1.grid(True, alpha=0.3)
@@ -1044,7 +1091,7 @@ if uploaded_file is not None:
                             # Processato
                             time_proc = np.linspace(0, len(processed_audio)/sr, len(processed_audio))
                             ax2.plot(time_proc, processed_audio, color='red', alpha=0.7)
-                            ax2.set_title(f"Audio Decomposto ({method_names[decomposition_method]})")
+                            ax2.set_title(f"Forma d'Onda Decomposta ({method_names[decomposition_method]})")
                             ax2.set_xlabel("Tempo (sec)")
                             ax2.set_ylabel("Ampiezza")
                             ax2.grid(True, alpha=0.3)
@@ -1095,31 +1142,31 @@ else:
         st.markdown("""
         ### Metodi di Decomposizione:
 
-        **🔀 Cut-up Sonoro (Burroughs)**
+        **Cut-up Sonoro (Burroughs)**
         - Ispirati alla tecnica letteraria di William Burroughs
         - Taglia l'audio in frammenti e li riassembla casualmente
         - Ottimo per creare collage sonori sperimentali
 
-        **🎛️ Remix Destrutturato** - Mantiene elementi riconoscibili ma li ricontestualizza
+        **Remix Destrutturato** - Mantiene elementi riconoscibili ma li ricontestualizza
         - Preserva parzialmente il ritmo originale
         - Ideale per remix creativi e riarrangiamenti
 
-        **🔬 Musique Concrète**
+        **Musique Concrète**
         - Basato sui principi di Pierre Schaeffer
         - Utilizza granular synthesis e manipolazioni concrete
         - Perfetto per texture sonore astratte
 
-        **🎭 Decostruzione Postmoderna**
+        **Decostruzione Postmoderna**
         - Decostruisce il significato musicale originale
         - Applica ironia e spostamenti di contesto
         - Crea riflessioni critiche sull'opera originale
 
-        **🎨 Decomposizione Creativa**
+        **Decomposizione Creativa**
         - Focus su discontinuità e shift emotivi
         - Trasformazioni basate sull'analisi degli onset
         - Genera variazioni espressive intense
 
-        **🌪️ Random Chaos**
+        **Random Chaos**
         - Ogni esecuzione è completamente diversa
         - Operazioni casuali estreme
         - Risultati imprevedibili e sperimentali
