@@ -1055,13 +1055,46 @@ if uploaded_file is not None:
                         
                         selected_method_description = technique_descriptions.get(decomposition_method, "Nessuna descrizione disponibile per questo metodo.")
 
+                        # --- Nuova Sezione: Sintesi Artistica della Decomposizione ---
+                        st.subheader("Sintesi Artistica della Decomposizione")
+                        
+                        artistic_summary = ""
+                        # Generazione del riassunto artistico in base al metodo
+                        if decomposition_method == "cut_up_sonoro":
+                            artistic_summary = f"""
+                            Con il metodo del **"Cut-up Sonoro"**, il brano originale è stato smembrato e ricombinato, trasformandosi in un'opera di arte sonora ispirata al caos controllato di William S. Burroughs. Ogni frammento, lungo circa {fragment_size:.1f} secondi, è stato trattato come una parola in una poesia decostruita.
+                            Il livello di casualità dei tagli ({cut_randomness:.1f}) e lo stile di riassemblaggio ('{reassembly_style}') hanno permesso di **dislocare il significato musicale** originale, creando inaspettate giustapposizioni e ritmi frammentati. Il risultato è un collage sonoro che sfida la percezione tradizionale, invitando l'ascoltatore a trovare nuove narrazioni all'interno della frammentazione.
+                            """
+                        elif decomposition_method == "remix_destrutturato":
+                            artistic_summary = f"""
+                            Attraverso il **"Remix Destrutturato"**, l'essenza del brano originale è stata catturata e rielaborata in una forma nuova e sorprendente. Pur mantenendo una certa fedeltà al ritmo (conservazione del battito del {beat_preservation*100:.0f}%), la melodia è stata frammentata e manipolata.
+                            I frammenti, di circa {fragment_size:.1f} secondi, hanno subito alterazioni di pitch e tempo (frammentazione melodia: {melody_fragmentation:.1f}), ricollocando gli elementi sonori in un **paesaggio acustico reinventato**. Questo remix non è una semplice variazione, ma una vera e propria decostruzione che riassembla gli ingredienti in un'esperienza d'ascolto che è al contempo familiare ed estranea.
+                            """
+                        elif decomposition_method == "musique_concrete":
+                            artistic_summary = f"""
+                            Con la tecnica della **"Musique Concrète"**, il brano è stato ridotto ai suoi "grani" sonori più elementari (dimensione dei grani: {grain_size:.2f} secondi). Questi micro-frammenti sono stati manipolati, rovesciati, stirati e compressi, per poi essere ricombinati con una densità ({texture_density:.1f}) che crea una nuova tessitura.
+                            Il risultato è un'opera sonora astratta che **esplora le qualità timbriche intrinseche del suono**, al di là della sua organizzazione musicale originale. L'ascolto si trasforma in un viaggio attraverso paesaggi sonori inusuali, dove il timbro e la consistenza diventano i veri protagonisti.
+                            """
+                        elif decomposition_method == "decostruzione_postmoderna":
+                            artistic_summary = f"""
+                            La **"Decostruzione Postmoderna"** ha applicato un filtro concettuale al brano, interrogandone il significato e la percezione. Con frammenti di {fragment_size:.1f} secondi, abbiamo esplorato l'ironia ({irony_level:.1f}) e gli spostamenti di contesto ({context_shift:.1f}).
+                            Elementi riconoscibili sono stati trattati in modo inaspettato (es. alterazioni di volume o inversioni rapide), e sono stati introdotti sottili elementi di rottura. L'obiettivo non è solo trasformare il suono, ma anche provocare una **riflessione critica sull'opera e sulla sua fruizione**, trasformando il familiare in qualcosa di leggermente destabilizzante ma affascinante.
+                            """
+                        elif decomposition_method == "decomposizione_creativa":
+                            artistic_summary = f"""
+                            Attraverso la **"Decomposizione Creativa"**, il brano è stato frammentato in base ai suoi punti di attacco (onset), consentendo interventi mirati che generano forti discontinuità ({discontinuity:.1f}) e shift emotivi ({emotional_shift:.1f}).
+                            I frammenti, di circa {fragment_size:.1f} secondi, sono stati soggetti a intense variazioni di pitch e tempo, e alcuni sono stati deliberatamente silenziati o saltati. Il risultato è un'esperienza sonora **ricca di colpi di scena e improvvisi cambi di umore**, un flusso e riflusso di stati emotivi e tensioni acustiche.
+                            """
+                        elif decomposition_method == "random_chaos":
+                            artistic_summary = f"""
+                            Il **"Random Chaos"** ha spinto il brano originale nei suoi limiti estremi, creando un'opera unica e imprevedibile. Con un livello di caos di {chaos_level:.1f}, l'audio è stato sottoposto a **trasformazioni radicali e casuali**, come pitch shift e time stretch estremi, inversioni di sezioni e l'introduzione di rumori.
+                            Il risultato è un'esplorazione sonora che sfugge a qualsiasi classificazione, un viaggio in un **paesaggio acustico alieno** dove l'originale è appena un eco lontano, e ogni ascolto rivela nuove, sorprendenti anomalie.
+                            """
+                        st.markdown(artistic_summary)
 
-                        # Sezione "Analisi della Decomposizione"
-                        st.subheader("Analisi della Decomposizione")
-                        st.markdown(f"**Metodo Applicato:** `{decomposition_method.replace('_', ' ').title()}`")
-                        st.markdown(selected_method_description) # Aggiunge la descrizione della tecnica
-                        st.markdown(f"**Durata Originale:** `{original_duration:.2f} secondi`")
-                        st.markdown(f"**Nuova Durata:** `{new_duration:.2f} secondi`")
+                        st.markdown("---")
+                        st.markdown(f"**Descrizione della Tecnica Applicata:**") # Titolo più specifico per la spiegazione della tecnica
+                        st.markdown(selected_method_description) # Descrizione della tecnica (già esistente)
 
                         st.markdown("---")
                         st.markdown("### Riepilogo dei Cambiamenti Quantitativi:") # Titolo più specifico
