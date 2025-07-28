@@ -775,7 +775,7 @@ def decomposizione_creativa(audio, sr, params):
         return audio
 
 def random_chaos(audio, sr, params):
-    """Chaos totale: combina tutti i metodi casualmente"""
+    """Chaos totale: combina tutti i metodi casualamente"""
     chaos_level = params['chaos_level']
 
     if audio.size == 0:
@@ -1024,7 +1024,7 @@ if uploaded_file is not None:
                         os.unlink(original_audio_path_temp)
                     except Exception as e:
                         st.warning(f"⚠️ Impossibile eliminare il file temporaneo originale: {original_audio_path_temp} - {e}")
-                return
+                st.stop() # FERMA L'ESECUZIONE QUI
 
             if not original_audio_path_temp or not os.path.exists(original_audio_path_temp):
                 st.error("❌ Errore: file audio originale temporaneo non trovato.")
@@ -1034,7 +1034,7 @@ if uploaded_file is not None:
                         os.unlink(output_path)
                     except Exception as e:
                         st.warning(f"⚠️ Impossibile eliminare il file temporaneo di output: {output_path} - {e}")
-                return
+                st.stop() # FERMA L'ESECUZIONE QUI
 
             try:
                 original_audio, _ = librosa.load(original_audio_path_temp, sr=sr)
@@ -1048,7 +1048,7 @@ if uploaded_file is not None:
                 if original_audio_path_temp and os.path.exists(original_audio_path_temp):
                     try: os.unlink(original_audio_path_temp)
                     except: pass
-                return
+                st.stop() # FERMA L'ESECUZIONE QUI
 
             # UI
             col1, col2 = st.columns(2)
