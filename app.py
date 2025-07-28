@@ -101,20 +101,21 @@ def analyze_audio_structure(audio, sr):
     """Analizza la struttura del brano per identificare elementi musicali"""
     if audio.size == 0:
         return {
-            'tempo': 0, 'beats': np.array([]), 'chroma': np.array([]),
+            'tempo': 0.0, 'beats': np.array([]), 'chroma': np.array([]), # Modificato a 0.0
             'mfcc': np.array([]), 'spectral_centroids': np.array([]),
             'onset_times': np.array([]), 'onset_frames': np.array([])
         }
 
-    tempo = 0
+    tempo = 0.0 # Modificato a 0.0
     beats = np.array([])
     try:
-        tempo, beats = librosa.beat.beat_track(y=audio, sr=sr)
+        tempo_val, beats = librosa.beat.beat_track(y=audio, sr=sr)
+        tempo = float(tempo_val) # Assicura che sia un float
         if beats.ndim > 1:
             beats = beats.flatten()
     except Exception as e:
         st.warning(f"Warning: Could not track beats, {e}. Trace: {traceback.format_exc()}")
-        tempo = 0
+        tempo = 0.0 # Modificato a 0.0
         beats = np.array([])
 
     chroma = np.array([])
@@ -556,7 +557,6 @@ def decostruzione_postmoderna(audio, sr, params):
                 lambda x: librosa.effects.time_stretch(x, rate=0.25) if x.size > 0 else np.array([]),
                 lambda x: x * 0.1 if x.size > 0 else np.array([]),
                 # FIX: Limita la dimensione massima del tile per evitare OOM e gestisce frammenti piccoli
-                # VECCHIO: lambda x: np.tile(x[:min(len(x)//4 if len(x)//4 > 0 else 1, 1000)], 4) if len(x) > 0 else np.array([]),
                 lambda x: np.tile(x[:max(1, min(len(x) // 4, 1000))] if len(x) > 0 else np.array([]), 4) if len(x) > 0 else np.array([]),
 
             ]
@@ -1102,10 +1102,22 @@ if uploaded_file is not None:
                     st.write("**Audio Originale:**")
                     if original_audio.size > 0:
                         orig_structure = analyze_audio_structure(original_audio, sr)
-                        st.write(f"- Tempo stimato: {orig_structure['tempo']:.1f} BPM")
+                        # Modifiche qui per la gestione dei tipi di dato
+                        if isinstance(orig_structure['tempo'], (int, float, np.number)):
+                            st.write(f"- Tempo stimato: {orig_structure['tempo']:.1f} BPM")
+                        else:
+                            st.write(f"- Tempo stimato: N/A BPM")
+
                         st.write(f"- Beat rilevati: {len(orig_structure['beats'])}")
                         st.write(f"- Onset rilevati: {len(orig_structure['onset_times'])}")
-                        st.write(f"- Centroide spettrale medio: {np.mean(orig_structure['spectral_centroids']):.1f} Hz" if orig_structure['spectral_centroids'].size > 0 else "- Centroide spettrale medio: N/A")
+                        
+                        if orig_structure['spectral_centroids'].size > 0:
+                            if isinstance(np.mean(orig_structure['spectral_centroids']), (int, float, np.number)):
+                                st.write(f"- Centroide spettrale medio: {np.mean(orig_structure['spectral_centroids']):.1f} Hz")
+                            else:
+                                st.write("- Centroide spettrale medio: N/A Hz")
+                        else:
+                            st.write("- Centroide spettrale medio: N/A")
                     else:
                         st.write("Nessun dato audio per l'analisi.")
 
@@ -1113,10 +1125,22 @@ if uploaded_file is not None:
                     st.write("**Audio Processato:**")
                     if processed_audio.size > 0:
                         proc_structure = analyze_audio_structure(processed_audio, sr)
-                        st.write(f"- Tempo stimato: {proc_structure['tempo']:.1f} BPM")
+                        # Modifiche qui per la gestione dei tipi di dato
+                        if isinstance(proc_structure['tempo'], (int, float, np.number)):
+                            st.write(f"- Tempo stimato: {proc_structure['tempo']:.1f} BPM")
+                        else:
+                            st.write(f"- Tempo stimato: N/A BPM")
+
                         st.write(f"- Beat rilevati: {len(proc_structure['beats'])}")
                         st.write(f"- Onset rilevati: {len(proc_structure['onset_times'])}")
-                        st.write(f"- Centroide spettrale medio: {np.mean(proc_structure['spectral_centroids']):.1f} Hz" if proc_structure['spectral_centroids'].size > 0 else "- Centroide spettrale medio: N/A")
+                        
+                        if proc_structure['spectral_centroids'].size > 0:
+                            if isinstance(np.mean(proc_structure['spectral_centroids']), (int, float, np.number)):
+                                st.write(f"- Centroide spettrale medio: {np.mean(proc_structure['spectral_centroids']):.1f} Hz")
+                            else:
+                                st.write("- Centroide spettrale medio: N/A Hz")
+                        else:
+                            st.write("- Centroide spettrale medio: N/A")
                     else:
                         st.write("Nessun dato audio per l'analisi.")
 
