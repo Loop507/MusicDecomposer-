@@ -14,7 +14,7 @@ import io
 import base64
 
 # Configurazione pagina
-st.set_page_config( # <<--- CORREZIONE QUI
+st.set_page_config(
     page_title="MusicDecomposer by loop507",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -511,7 +511,7 @@ def decostruzione_postmoderna(audio, sr, params):
             energy = np.array([])
 
     important_frames = np.array([])
-    if energy.size > 0: # Correzione: energy.size > 0 anziché `energy and energy.size > 0`
+    if energy.size > 0:
         energy_threshold = np.percentile(energy, 70)
         important_frames = np.where(energy > energy_threshold)[0]
 
@@ -538,7 +538,7 @@ def decostruzione_postmoderna(audio, sr, params):
             break
         start = random.randint(0, len(audio) - fragment_samples)
         fragment = audio[start:start + fragment_samples]
-        if fragment.size > 0: # Correzione: fragment.size > 0 anziché `fragment and fragment.size > 0`
+        if fragment.size > 0:
             fragments.append(fragment)
             fragment_types.append('random')
 
@@ -664,7 +664,7 @@ def decomposizione_creativa(audio, sr, params):
 
     mood_labels = np.array([])
     # Controlla se features è stato creato e non è vuoto
-    if features.size > 0: # Correzione: features.size > 0 anziché `features and features.size > 0`
+    if features.size > 0:
         try:
             features_scaled = StandardScaler().fit_transform(features.T) # Trasponi per avere (n_frames, n_features)
             # Controlla che features_scaled non sia vuoto dopo lo scaling
@@ -723,8 +723,10 @@ def decomposizione_creativa(audio, sr, params):
                 # NUOVO: Assicurati che mood_slice sia non vuoto e contenga un mood valido
                 mood_slice = mood_labels[i:i+frames_per_fragment]
                 if mood_slice.size > 0:
-                    dominant_mood = max(set(mood_slice), key=list(mood_slice).count)
-                    if dominant_mood in mood_fragments: # NUOVO: Assicurati che il mood esista
+                    # CORREZIONE APPLICATA QUI
+                    mood_slice_list = [int(m) for m in mood_slice]  # assicurati siano int
+                    dominant_mood = max(set(mood_slice_list), key=mood_slice_list.count)
+                    if dominant_mood in mood_fragments:
                         mood_fragments[dominant_mood].append(fragment)
                     else:
                         st.warning(f"Dominant mood {dominant_mood} not in mood_fragments keys. Skipping fragment.")
@@ -788,7 +790,7 @@ def decomposizione_creativa(audio, sr, params):
                 result_fragments.append(fragment)
         else:
             # Se il mood corrente non ha più frammenti o non esiste, cambia mood
-            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0] # Correzione: len(available_moods) > 0 anziché `available_moods`
+            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
             if len(available_moods) > 0:
                 current_mood = random.choice(available_moods)
             else:
@@ -796,7 +798,7 @@ def decomposizione_creativa(audio, sr, params):
                 break
 
         if random.random() < discontinuity / 2.0:
-            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0] # Correzione: len(available_moods) > 0 anziché `available_moods`
+            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
             if len(available_moods) > 0:
                 current_mood = random.choice(available_moods)
             elif any(len(v) > 0 for v in mood_fragments.values() if isinstance(v, list)): # Fallback se il mood scelto non ha più frammenti
@@ -896,7 +898,7 @@ def process_audio(audio_file, method, params):
 
     try:
         processed_audio = np.array([])
-        if audio.size > 0 and len(audio.shape) > 1: # Correzione: audio.size > 0 anziché `audio and ...`
+        if audio.size > 0 and len(audio.shape) > 1:
             processed_channels = []
             for channel in range(audio.shape[0]):
                 channel_audio = audio[channel]
@@ -911,7 +913,7 @@ def process_audio(audio_file, method, params):
             min_length = min(len(ch) for ch in processed_channels)
             processed_channels = [ch[:min_length] for ch in processed_channels]
             processed_audio = np.array(processed_channels)
-        elif audio.size > 0: # Correzione: audio.size > 0
+        elif audio.size > 0:
             processed_audio = decompose_audio(audio, sr, method, params)
         else: # Audio vuoto all'inizio
             st.error("Il file audio caricato è vuoto o non contiene dati validi.")
