@@ -68,6 +68,17 @@ with st.sidebar:
     st.markdown("---")
 
     # Parametri specifici per metodo
+    cut_randomness = None
+    reassembly_style = None
+    beat_preservation = None
+    melody_fragmentation = None
+    grain_size = None
+    texture_density = None
+    irony_level = None
+    context_shift = None
+    discontinuity = None
+    emotional_shift = None
+
     if decomposition_method == "cut_up_sonoro":
         st.subheader("Cut-up Parameters")
         cut_randomness = st.slider("Casualità Tagli", 0.1, 1.0, 0.7, 0.1)
@@ -709,3 +720,288 @@ def decostruzione_postmoderna(audio, sr, params):
     except Exception as e:
         st.warning(f"Errore nella decostruzione postmoderna: {e}")
         return audio
+
+# Funzione stub per decomposizione_creativa (da implementare)
+def decomposizione_creativa(audio, sr, params):
+    st.warning("Decomposizione Creativa: Funzionalità da implementare!")
+    # Qui andrebbe la logica per la decomposizione creativa
+    # Per ora, restituisce l'audio originale o un array vuoto
+    return audio * (1 - params.get('discontinuity', 1.0) * 0.1) # Esempio molto semplificato di effetto
+
+# Funzione stub per random_chaos (da implementare)
+def random_chaos(audio, sr, params):
+    st.warning("Random Chaos: Funzionalità da implementare!")
+    # Qui andrebbe la logica per il random chaos
+    # Esempio: applica pitch shift e time stretch molto aggressivi e casuali
+    if audio.size == 0:
+        return np.array([])
+
+    processed_audio = audio.copy()
+    if random.random() < params['chaos_level'] * 0.5:
+        shift = random.uniform(-24, 24)
+        processed_audio = safe_pitch_shift(processed_audio, sr, shift)
+    if processed_audio.size > 0 and random.random() < params['chaos_level'] * 0.5:
+        stretch = random.uniform(0.1, 10.0)
+        processed_audio = safe_time_stretch(processed_audio, stretch)
+    if processed_audio.size > 0 and random.random() < params['chaos_level'] * 0.5:
+        processed_audio = processed_audio[::-1] # Inverti
+    
+    # Aggiungi un po' di rumore bianco
+    if processed_audio.size > 0:
+        noise_level = random.uniform(0.01, 0.1) * params['chaos_level']
+        noise = np.random.normal(0, noise_level, processed_audio.size)
+        processed_audio += noise
+    
+    return processed_audio
+
+# Logica principale per processare l'audio
+if uploaded_file is not None:
+    try:
+        # Carica il file audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_file_path = tmp_file.name
+
+        # Leggi l'audio
+        audio, sr = librosa.load(tmp_file_path, sr=None)
+        
+        # Mostra informazioni del file originale
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Durata", f"{len(audio)/sr:.2f} sec")
+        with col2:
+            st.metric("Sample Rate", f"{sr} Hz")
+        with col3:
+            st.metric("Canali", "Mono")
+
+        # Player per l'audio originale
+        st.subheader("🎵 Audio Originale")
+        st.audio(uploaded_file, format='audio/wav')
+
+        # Pulsante per processare
+        if st.button("🎭 SCOMPONI E RICOMPONI", type="primary", use_container_width=True):
+            with st.spinner(f"Applicando {decomposition_method}..."):
+                
+                # Prepara parametri
+                params = {
+                    'fragment_size': fragment_size,
+                    'chaos_level': chaos_level,
+                    'structure_preservation': structure_preservation
+                }
+
+                # Aggiungi parametri specifici per metodo
+                if decomposition_method == "cut_up_sonoro":
+                    params.update({
+                        'cut_randomness': cut_randomness,
+                        'reassembly_style': reassembly_style
+                    })
+                elif decomposition_method == "remix_destrutturato":
+                    params.update({
+                        'beat_preservation': beat_preservation,
+                        'melody_fragmentation': melody_fragmentation
+                    })
+                elif decomposition_method == "musique_concrete":
+                    params.update({
+                        'grain_size': grain_size,
+                        'texture_density': texture_density
+                    })
+                elif decomposition_method == "decostruzione_postmoderna":
+                    params.update({
+                        'irony_level': irony_level,
+                        'context_shift': context_shift
+                    })
+                elif decomposition_method == "decomposizione_creativa":
+                    params.update({
+                        'discontinuity': discontinuity,
+                        'emotional_shift': emotional_shift
+                    })
+
+                # Applica il metodo di decomposizione selezionato
+                processed_audio = np.array([]) # Inizializza per sicurezza
+                if decomposition_method == "cut_up_sonoro":
+                    processed_audio = cut_up_sonoro(audio, sr, params)
+                elif decomposition_method == "remix_destrutturato":
+                    processed_audio = remix_destrutturato(audio, sr, params)
+                elif decomposition_method == "musique_concrete":
+                    processed_audio = musique_concrete(audio, sr, params)
+                elif decomposition_method == "decostruzione_postmoderna":
+                    processed_audio = decostruzione_postmoderna(audio, sr, params)
+                elif decomposition_method == "decomposizione_creativa":
+                    processed_audio = decomposizione_creativa(audio, sr, params)
+                elif decomposition_method == "random_chaos":
+                    processed_audio = random_chaos(audio, sr, params)
+
+                # Verifica che l'elaborazione sia andata a buon fine
+                if processed_audio.size == 0:
+                    st.error("❌ Elaborazione fallita - audio risultante vuoto. Prova a modificare i parametri o a usare un file diverso.")
+                else:
+                    # Salva l'audio processato
+                    processed_tmp_path = "" # Inizializza fuori dal blocco try per essere accessibile dal finally
+                    try:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as processed_tmp:
+                            sf.write(processed_tmp.name, processed_audio, sr)
+                            processed_tmp_path = processed_tmp.name
+
+                        # Mostra risultati
+                        st.success("✅ Decomposizione completata!")
+                        
+                        # Metriche dell'audio processato
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Nuova Durata", f"{len(processed_audio)/sr:.2f} sec", 
+                                    f"{((len(processed_audio)/sr) - (len(audio)/sr)):.2f} sec")
+                        with col2:
+                            original_rms = np.sqrt(np.mean(audio**2))
+                            processed_rms = np.sqrt(np.mean(processed_audio**2))
+                            st.metric("RMS Energy", f"{processed_rms:.4f}", 
+                                    f"{(processed_rms - original_rms):.4f}")
+                        with col3:
+                            # Assicurati che le lunghezze siano compatibili per FFT, altrimenti calcola separatamente
+                            min_len = min(len(processed_audio), len(audio))
+                            if min_len > 0:
+                                # Calcola la differenza media dello spettro di potenza
+                                spec_orig = np.abs(np.fft.fft(audio[:min_len]))
+                                spec_proc = np.abs(np.fft.fft(processed_audio[:min_len]))
+                                spectral_diff = np.mean(np.abs(spec_proc - spec_orig))
+                            else:
+                                spectral_diff = 0.0
+                            st.metric("Spectral Change", f"{spectral_diff:.2e}")
+
+                        # Player per l'audio processato
+                        st.subheader("🎨 Audio Decomposto e Ricomposto")
+                        
+                        # Leggi il file processato per il player
+                        with open(processed_tmp_path, 'rb') as audio_file:
+                            audio_bytes = audio_file.read()
+                            st.audio(audio_bytes, format='audio/wav')
+
+                        # Pulsante download
+                        method_names = {
+                            "cut_up_sonoro": "CutUp",
+                            "remix_destrutturato": "RemixDestrutturato", 
+                            "musique_concrete": "MusiqueConcrete",
+                            "decostruzione_postmoderna": "DecostruzionePostmoderna",
+                            "decomposizione_creativa": "DecomposizioneCreativa",
+                            "random_chaos": "RandomChaos"
+                        }
+                        
+                        filename = f"{uploaded_file.name.split('.')[0]}_{method_names[decomposition_method]}.wav"
+                        
+                        st.download_button(
+                            label="💾 Scarica Audio Decomposto",
+                            data=audio_bytes,
+                            file_name=filename,
+                            mime="audio/wav",
+                            use_container_width=True
+                        )
+
+                        # Visualizzazione forme d'onda (opzionale)
+                        with st.expander("📊 Confronto Forme d'Onda"):
+                            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+                            
+                            # Originale
+                            time_orig = np.linspace(0, len(audio)/sr, len(audio))
+                            ax1.plot(time_orig, audio, color='blue', alpha=0.7)
+                            ax1.set_title("Audio Originale")
+                            ax1.set_xlabel("Tempo (sec)")
+                            ax1.set_ylabel("Ampiezza")
+                            ax1.grid(True, alpha=0.3)
+                            
+                            # Processato
+                            time_proc = np.linspace(0, len(processed_audio)/sr, len(processed_audio))
+                            ax2.plot(time_proc, processed_audio, color='red', alpha=0.7)
+                            ax2.set_title(f"Audio Decomposto ({method_names[decomposition_method]})")
+                            ax2.set_xlabel("Tempo (sec)")
+                            ax2.set_ylabel("Ampiezza")
+                            ax2.grid(True, alpha=0.3)
+                            
+                            plt.tight_layout()
+                            st.pyplot(fig)
+
+                        # Analisi spettrale (opzionale)
+                        with st.expander("🎼 Analisi Spettrale"):
+                            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+                            
+                            # Spettrogramma originale
+                            D_orig = librosa.amplitude_to_db(np.abs(librosa.stft(audio)), ref=np.max)
+                            librosa.display.specshow(D_orig, y_axis='hz', x_axis='time', sr=sr, ax=ax1)
+                            ax1.set_title("Spettrogramma Originale")
+                            ax1.set_xlabel("Tempo (sec)")
+                            ax1.set_ylabel("Frequenza (Hz)")
+                            
+                            # Spettrogramma processato
+                            D_proc = librosa.amplitude_to_db(np.abs(librosa.stft(processed_audio)), ref=np.max)
+                            librosa.display.specshow(D_proc, y_axis='hz', x_axis='time', sr=sr, ax=ax2)
+                            ax2.set_title("Spettrogramma Decomposto")
+                            ax2.set_xlabel("Tempo (sec)")
+                            ax2.set_ylabel("Frequenza (Hz)")
+                            
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                    finally:
+                        # Cleanup files temporanei
+                        try:
+                            if os.path.exists(tmp_file_path):
+                                os.unlink(tmp_file_path)
+                            if processed_tmp_path and os.path.exists(processed_tmp_path):
+                                os.unlink(processed_tmp_path)
+                        except Exception as e:
+                            st.error(f"Errore durante la pulizia dei file temporanei: {e}")
+
+    except Exception as e:
+        st.error(f"❌ Errore nel processamento: {str(e)}")
+        st.error(f"Dettagli: {traceback.format_exc()}")
+
+else:
+    # Messaggio quando non c'è file caricato
+    st.info("👆 Carica un file audio per iniziare la decomposizione")
+    
+    # Istruzioni d'uso
+    with st.expander("📖 Come usare MusicDecomposer"):
+        st.markdown("""
+        ### Metodi di Decomposizione:
+
+        **🔀 Cut-up Sonoro (Burroughs)**
+        - Ispirati alla tecnica letteraria di William Burroughs
+        - Taglia l'audio in frammenti e li riassembla casualmente
+        - Ottimo per creare collage sonori sperimentali
+
+        **🎛️ Remix Destrutturato** - Mantiene elementi riconoscibili ma li ricontestualizza
+        - Preserva parzialmente il ritmo originale
+        - Ideale per remix creativi e riarrangiamenti
+
+        **🔬 Musique Concrète**
+        - Basato sui principi di Pierre Schaeffer
+        - Utilizza granular synthesis e manipolazioni concrete
+        - Perfetto per texture sonore astratte
+
+        **🎭 Decostruzione Postmoderna**
+        - Decostruisce il significato musicale originale
+        - Applica ironia e spostamenti di contesto
+        - Crea riflessioni critiche sull'opera originale
+
+        **🎨 Decomposizione Creativa**
+        - Focus su discontinuità e shift emotivi
+        - Trasformazioni basate sull'analisi degli onset
+        - Genera variazioni espressive intense
+
+        **🌪️ Random Chaos**
+        - Ogni esecuzione è completamente diversa
+        - Operazioni casuali estreme
+        - Risultati imprevedibili e sperimentali
+
+        ### Parametri:
+        - **Dimensione Frammenti**: Quanto grandi sono i pezzi tagliati
+        - **Livello di Chaos**: Intensità delle trasformazioni
+        - **Conservazione Struttura**: Quanto mantenere dell'originale
+        """)
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #666; padding: 20px;'>
+    <p><em>MusicDecomposer by loop507</em></p>
+    <p>Trasforma la tua musica in arte sonora sperimentale</p>
+    <p style='font-size: 0.8em;'>Inspired by: Musique Concrète • Plunderphonics • Cut-up Technique • Postmodern Deconstruction</p>
+</div>
+""", unsafe_allow_html=True)
