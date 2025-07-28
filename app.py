@@ -70,13 +70,11 @@ def safe_time_stretch(audio, rate):
         st.warning(f"Time stretch fallito: {e}. Restituisco l'audio originale del frammento.")
         return audio 
 
----
-
 ## Funzione di Decostruzione Postmoderna
 
-Questa funzione implementa la logica di "decostruzione ironica" descritta, con attenzione alla robustezza e alla gestione degli errori.
+# Questa funzione implementa la logica di "decostruzione ironica" descritta, 
+# con attenzione alla robustezza e alla gestione degli errori.
 
-```python
 def decostruzione_postmoderna(audio, sr, params):
     """
     Applica una decostruzione postmoderna e ironica del brano audio.
@@ -324,7 +322,7 @@ def process_single_fragment_postmodern(audio, sr, irony_level, context_shift):
             if effected_fragment.size > 0:
                 current_fragment = effected_fragment
         except Exception as e:
-            st.warning(f"Effetto contestuale su audio intero fallito: {e}.")
+            st.warning(f"Effetto contestuale su audio intero fallita: {e}.")
 
     current_fragment = np.nan_to_num(current_fragment, nan=0.0, posinf=0.0, neginf=0.0)
     max_val = np.max(np.abs(current_fragment))
@@ -332,13 +330,11 @@ def process_single_fragment_postmodern(audio, sr, irony_level, context_shift):
         return current_fragment / max_val * 0.8
     return audio # Fallback se diventa silenzioso
 
----
-
 ## Funzione Generale di Decomposizione Audio
 
-Questa funzione agisce come un "dispatcher" per i vari metodi di decomposizione, inclusa la `decostruzione_postmoderna`.
+# Questa funzione agisce come un "dispatcher" per i vari metodi di decomposizione, 
+# inclusa la `decostruzione_postmoderna`.
 
-```python
 def decompose_audio(audio, sr, method, params):
     """
     Applica il metodo di decomposizione audio scelto.
@@ -423,10 +419,11 @@ def decompose_audio(audio, sr, method, params):
         return audio_backup # Fallback sicuro all'originale
 
 ---
-
 ## Struttura dell'Applicazione Streamlit
 
-```python
+# Questa è la parte principale dell'app che interagisce con l'utente, 
+# carica l'audio, mostra i controlli e riproduce il risultato.
+
 st.set_page_config(layout="wide", page_title="Decostruttore Audio Postmoderno")
 
 st.title("🎶 Decostruttore Audio Postmoderno")
