@@ -890,13 +890,8 @@ def process_audio(uploaded_file, method, params, initial_sr=None):
     except Exception as e:
         st.error(f"Errore nel processing: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}. Trace: {traceback.format_exc()}")
         return None, None, None # In caso di errore, restituisce None
-    finally:
-        # Pulisci il file temporaneo originale qui, dopo che è stato caricato in memoria
-        if original_audio_path_temp and os.path.exists(original_audio_path_temp):
-            try:
-                os.unlink(original_audio_path_temp)
-            except Exception as e:
-                st.warning(f"⚠️ Impossibile eliminare il file temporaneo originale: {original_audio_path_temp} - {e}")
+    # Rimosso il blocco finally per l'eliminazione dei file temporanei QUI.
+    # Verranno eliminati alla fine del blocco principale di Streamlit.
 
 
 def decompose_audio(audio, sr, method, params):
@@ -1123,7 +1118,7 @@ if uploaded_file is not None:
                     else:
                         st.write("Nessun dato audio per l'analisi.")
 
-            # Pulisci i file temporanei dopo l'uso completo
+            # Pulisci i file temporanei dopo l'uso completo (ORA È NEL POSTO GIUSTO)
             try:
                 if output_path and os.path.exists(output_path):
                     os.unlink(output_path)
