@@ -555,8 +555,10 @@ def decostruzione_postmoderna(audio, sr, params):
                 lambda x: librosa.effects.pitch_shift(x, sr=sr, n_steps=-12) if x.size > 0 else np.array([]),
                 lambda x: librosa.effects.time_stretch(x, rate=0.25) if x.size > 0 else np.array([]),
                 lambda x: x * 0.1 if x.size > 0 else np.array([]),
-                # FIX: Limita la dimensione massima del tile per evitare OOM
-                lambda x: np.tile(x[:min(len(x)//4 if len(x)//4 > 0 else 1, 1000)], 4) if len(x) > 0 else np.array([]),
+                # FIX: Limita la dimensione massima del tile per evitare OOM e gestisce frammenti piccoli
+                # VECCHIO: lambda x: np.tile(x[:min(len(x)//4 if len(x)//4 > 0 else 1, 1000)], 4) if len(x) > 0 else np.array([]),
+                lambda x: np.tile(x[:max(1, min(len(x) // 4, 1000))] if len(x) > 0 else np.array([]), 4) if len(x) > 0 else np.array([]),
+
             ]
             transform = random.choice(ironic_transforms)
             try:
