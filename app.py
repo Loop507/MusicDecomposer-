@@ -14,7 +14,7 @@ import io
 import base64
 
 # Configurazione pagina
-st.set_page_page_config(
+st.set_page_config( # <<--- CORREZIONE QUI
     page_title="MusicDecomposer by loop507",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -314,7 +314,7 @@ def remix_destrutturato(audio, sr, params):
 
     if beat_preservation > 0.3:
         preserve_count = int(len(fragments) * beat_preservation)
-        if len(fragments) > 0: # Ensure fragments is not empty before random.sample
+        if len(fragments) > 0: # Ensure fragments is not empty for random.sample
             preserve_indices = random.sample(range(len(fragments)), preserve_count)
         else:
             preserve_indices = []
@@ -755,7 +755,7 @@ def decomposizione_creativa(audio, sr, params):
 
     iteration_count = 0
     # NUOVO: Rafforza la condizione del while loop con isinstance
-    while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values() if isinstance(v, list)): # Correzione: rimosso `and mood_fragments`
+    while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values() if isinstance(v, list)):
         iteration_count += 1
         
         # NUOVO: Controlla che il current_mood esista e abbia frammenti
@@ -928,7 +928,7 @@ def process_audio(audio_file, method, params):
         else:
             sf.write(output_path, processed_audio, sr)
 
-        return output_path, sr, original_audio_path_temp
+        return output_path, sr, audio_path
 
     except Exception as e:
         st.error(f"Errore nel processing: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}")
@@ -957,7 +957,7 @@ def decompose_audio(audio, sr, method, params):
     }
 
     decompose_func = methods_map.get(method)
-    if decompose_func == None:
+    if decompose_func is None:
         st.error(f"Metodo {method} non riconosciuto")
         return audio
 
