@@ -651,35 +651,47 @@ def decomposizione_creativa(audio, sr, params):
     spectral_centroids = structure['spectral_centroids']
 
     features = np.array([])
+    # NUOVO: Controlla che chroma e mfcc abbiano dati prima di combinarli
     if chroma.size > 0 and mfcc.size > 0:
-        mfcc_sliced = mfcc[:5] if mfcc.shape[0] >= 5 else mfcc
-        min_frames = min(chroma.shape[1], mfcc_sliced.shape[1])
+        # Assicurati che le dimensioni siano compatibili
+        min_frames = min(chroma.shape[1], mfcc.shape[1])
         if min_frames > 0:
-            features = np.vstack([chroma[:, :min_frames], mfcc_sliced[:, :min_frames]])
+            # Slicing MFCC per compatibilità di dimensioni se necessario (es. 13 MFCC)
+            mfcc_sliced = mfcc[:5, :min_frames] if mfcc.shape[0] >= 5 else mfcc[:, :min_frames]
+            
+            # NUOVO: Riconferma che le dimensioni dopo slicing siano valide prima di vstack
+            if mfcc_sliced.shape[1] > 0:
+                features = np.vstack([chroma[:, :min_frames], mfcc_sliced])
+            else:
+                st.warning("Not enough frames after slicing to create features for clustering.")
         else:
             st.warning("Not enough frames to create features for clustering.")
 
     mood_labels = np.array([])
-    if features.size > 0: # <-- AGGIUNTA/CONTROLLO
+    if features.size > 0: # <-- CONTROLLO ROBUSTO
         try:
             features_scaled = StandardScaler().fit_transform(features.T)
-            n_clusters = min(8, features_scaled.shape[0] // 10)
-            if n_clusters < 1 and features_scaled.shape[0] > 0: # Assicurati che n_clusters sia almeno 1 se ci sono dati
-                n_clusters = 1
-            elif n_clusters < 1 and features_scaled.shape[0] == 0: # Nessun cluster se non ci sono dati
-                n_clusters = 0
-
-            if n_clusters >= 1: # <-- AGGIUNTA/CONTROLLO
-                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                mood_labels = kmeans.fit_predict(features_scaled)
+            # NUOVO: Controlla che features_scaled abbia almeno un campione per il clustering
+            if features_scaled.shape[0] == 0:
+                st.warning("Scaled features are empty. Cannot perform KMeans clustering.")
             else:
-                st.warning("Not enough clusters could be formed for KMeans.")
+                n_clusters = min(8, features_scaled.shape[0] // 10)
+                if n_clusters < 1 and features_scaled.shape[0] > 0:
+                    n_clusters = 1
+                elif n_clusters < 1 and features_scaled.shape[0] == 0: # Se non ci sono dati, non ci sono cluster
+                    n_clusters = 0
+
+                if n_clusters >= 1: # <-- CONTROLLO ROBUSTO
+                    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                    mood_labels = kmeans.fit_predict(features_scaled)
+                else:
+                    st.warning("Not enough clusters could be formed for KMeans. Setting mood labels to empty.")
         except Exception as e:
             st.warning(f"KMeans clustering failed: {e}. Mood labels will be empty.")
             mood_labels = np.array([])
 
-    if mood_labels.size == 0: # <-- AGGIUNTA/CONTROLLO
-        st.warning("Mood labels could not be generated, returning original audio as fallback in decomposizione_creativa.")
+    if mood_labels.size == 0: # <-- CONTROLLO ROBUSTO
+        st.warning("Mood labels could not be generated or are empty. Returning original audio as fallback in decomposizione_creativa.")
         return audio # Fallback se il clustering non produce etichette valide
 
     fragment_samples = int(fragment_size * sr)
@@ -689,13 +701,13 @@ def decomposizione_creativa(audio, sr, params):
     hop_length = 512
     frames_per_fragment = fragment_samples // hop_length
     if frames_per_fragment <= 0:
-        frames_per_fragment = 1
+        frames_per_fragment = 1 # Almeno un frame per frammento
 
     mood_fragments = {mood: [] for mood in np.unique(mood_labels)}
 
     max_mood_idx = len(mood_labels) - frames_per_fragment
-    if max_mood_idx < 0:
-        st.warning("Audio too short for mood analysis. Returning original audio as fallback.")
+    if max_mood_idx < 0: # Questo può accadere se l'audio è troppo corto o fragment_size è troppo grande
+        st.warning("Audio too short for mood analysis or fragment size too large. Returning original audio as fallback.")
         return audio
 
     for i in range(0, max_mood_idx + 1, frames_per_fragment):
@@ -705,34 +717,46 @@ def decomposizione_creativa(audio, sr, params):
         if end_sample > start_sample:
             fragment = audio[start_sample:end_sample]
             if fragment.size > 0:
+                # NUOVO: Assicurati che mood_slice sia non vuoto e contenga un mood valido
                 mood_slice = mood_labels[i:i+frames_per_fragment]
-                if mood_slice.size > 0: # <-- AGGIUNTA/CONTROLLO
+                if mood_slice.size > 0:
                     dominant_mood = max(set(mood_slice), key=list(mood_slice).count)
-                    mood_fragments[dominant_mood].append(fragment)
+                    if dominant_mood in mood_fragments: # NUOVO: Assicurati che il mood esista
+                        mood_fragments[dominant_mood].append(fragment)
+                    else:
+                        st.warning(f"Dominant mood {dominant_mood} not in mood_fragments keys. Skipping fragment.")
+                else:
+                    st.warning(f"Mood slice is empty for fragment at index {i}. Skipping fragment.")
+            else:
+                st.warning(f"Fragment at index {i} is empty. Skipping.")
 
+
+    # NUOVO: Filtra i mood che non hanno frammenti validi
+    mood_fragments = {k: [f for f in v if f.size > 0] for k, v in mood_fragments.items()}
     mood_fragments = {k: v for k, v in mood_fragments.items() if v}
 
-    if not mood_fragments: # Modifica: usa not mood_fragments (già presente, ma importante)
-        st.warning("No fragments generated for any mood. Returning original audio as fallback.")
+    if not mood_fragments: # <-- CONTROLLO ROBUSTO: Se nessun frammento è stato generato o sono tutti vuoti
+        st.warning("No valid fragments generated for any mood. Returning original audio as fallback.")
         return audio
 
     result_fragments = []
-    available_moods_init = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0] # Modifica: usa len(mood_fragments[m]) > 0
-    if not available_moods_init: # Assicurati che ci sia almeno un mood con frammenti
-        st.warning("No initial available moods with fragments. Returning original audio as fallback.")
+    # NUOVO: Inizializza available_moods_init con un controllo esplicito
+    available_moods_init = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
+    if not available_moods_init:
+        st.warning("No initial available moods with valid fragments. Returning original audio as fallback.")
         return audio
     current_mood = random.choice(available_moods_init)
 
     total_expected_fragments = sum(len(frags) for frags in mood_fragments.values())
-    max_iterations = total_expected_fragments * 2 if total_expected_fragments > 0 else 100 # Evita 0 iterazioni se non ci sono frammenti
+    max_iterations = total_expected_fragments * 2 if total_expected_fragments > 0 else 100
 
     iteration_count = 0
-    # Modifica: Controlla che ci siano frammenti *effettivi* da elaborare
+    # NUOVO: Rafforza la condizione del while loop
     while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values()):
         iteration_count += 1
         
-        # Modifica: Assicurati che ci siano frammenti nel current_mood prima di tentarne l'estrazione
-        if len(mood_fragments[current_mood]) > 0:
+        # NUOVO: Controlla che il current_mood esista e abbia frammenti
+        if current_mood in mood_fragments and len(mood_fragments[current_mood]) > 0:
             fragment = random.choice(mood_fragments[current_mood])
             mood_fragments[current_mood].remove(fragment)
 
@@ -760,7 +784,7 @@ def decomposizione_creativa(audio, sr, params):
             if fragment.size > 0:
                 result_fragments.append(fragment)
         else:
-            # Se il mood corrente non ha più frammenti, cambia mood
+            # Se il mood corrente non ha più frammenti o non esiste, cambia mood
             available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
             if available_moods:
                 current_mood = random.choice(available_moods)
@@ -769,22 +793,26 @@ def decomposizione_creativa(audio, sr, params):
                 break
 
         if random.random() < discontinuity / 2.0:
-            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0] # Modifica: usa len(mood_fragments[m]) > 0
+            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
             if available_moods:
                 current_mood = random.choice(available_moods)
-            elif any(len(v) > 0 for v in mood_fragments.values()): # Modifica: usa len(v) > 0
-                 current_mood = random.choice([m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]) # Modifica: usa len(mood_fragments[m]) > 0
+            elif any(len(v) > 0 for v in mood_fragments.values()): # Fallback se il mood scelto non ha più frammenti
+                 current_mood = random.choice([m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]) # Scegli un mood a caso tra quelli che hanno ancora frammenti
 
         if random.random() < discontinuity / 4.0:
             silence_duration = random.uniform(0.1, 0.5)
             silence = np.zeros(int(silence_duration * sr))
             if silence.size > 0:
                 result_fragments.append(silence)
+    
+    # NUOVO: Filtra eventuali frammenti vuoti nel risultato finale prima di concatenare
+    result_fragments = [f for f in result_fragments if f.size > 0]
 
-    if len(result_fragments) > 0: # Modifica: usa len(result_fragments) > 0
+    if len(result_fragments) > 0: # <-- CONTROLLO ROBUSTO
         result = np.concatenate(result_fragments)
     else:
-        result = audio # Fallback all'audio originale se non si generano frammenti
+        st.warning("No valid fragments were assembled in decomposizione_creativa. Returning original audio as fallback.")
+        result = audio # Fallback all'audio originale se non si generano frammenti validi
 
     return result
 
@@ -1014,7 +1042,7 @@ if uploaded_file is not None:
         with st.spinner(" Decomponendo il brano in arte sonora sperimentale..."):
             output_path, sr, original_audio_path_temp = process_audio(uploaded_file, decomposition_method, params)
 
-            if output_path is not None and sr is not None: # Modifica: come suggerito
+            if output_path is not None and sr is not None:
                 original_audio, _ = librosa.load(original_audio_path_temp, sr=sr)
                 processed_audio, _ = librosa.load(output_path, sr=sr)
 
