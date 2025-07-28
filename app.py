@@ -11,7 +11,6 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import io
-import base64
 import traceback # Importa per i dettagli degli errori
 
 # Configurazione pagina
@@ -111,7 +110,6 @@ def analyze_audio_structure(audio, sr):
     beats = np.array([])
     try:
         tempo, beats = librosa.beat.beat_track(y=audio, sr=sr)
-        # Ensure beats is a 1D array even if it's empty
         if beats.ndim > 1:
             beats = beats.flatten()
     except Exception as e:
@@ -145,7 +143,7 @@ def analyze_audio_structure(audio, sr):
 
     onset_times = np.array([])
     try:
-        onset_times = librosa.times_like(onset_frames, sr=sr)
+        onset_times = librosa.frames_to_time(onset_frames, sr=sr)
     except Exception as e:
         st.warning(f"Warning: Could not convert onset frames to times, {e}. Trace: {traceback.format_exc()}")
 
@@ -648,138 +646,87 @@ def decomposizione_creativa(audio, sr, params):
     spectral_centroids = structure['spectral_centroids']
 
     features = np.array([])
-    # NUOVO: Controlla che chroma e mfcc abbiano dati prima di combinarli
     if chroma.size > 0 and mfcc.size > 0:
-        # Assicurati che le dimensioni siano compatibili
         min_frames = min(chroma.shape[1], mfcc.shape[1])
         if min_frames > 0:
-            # Slicing MFCC per compatibilità di dimensioni se necessario (es. 13 MFCC)
             mfcc_sliced = mfcc[:5, :min_frames] if mfcc.shape[0] >= 5 else mfcc[:, :min_frames]
-            
-            # NUOVO: Riconferma che le dimensioni dopo slicing siano valide prima di vstack
             if mfcc_sliced.shape[1] > 0:
                 features = np.vstack([chroma[:, :min_frames], mfcc_sliced])
-            else:
-                st.warning("Not enough frames after slicing to create features for clustering.")
-        else:
-            st.warning("Not enough frames to create features for clustering.")
 
     mood_labels = np.array([])
-    # Controlla se features è stato creato e non è vuoto
     if features.size > 0:
         try:
-            features_scaled = StandardScaler().fit_transform(features.T) # Trasponi per avere (n_frames, n_features)
-            # Controlla che features_scaled non sia vuoto dopo lo scaling
-            if features_scaled.shape[0] == 0:
-                st.warning("Scaled features are empty after scaling. Cannot perform KMeans clustering.")
-            else:
-                # Determina il numero di cluster
-                # Il numero di cluster non può essere maggiore del numero di campioni
-                n_clusters = min(8, features_scaled.shape[0]) 
-                if n_clusters < 1:
-                    n_clusters = 1 # Usa almeno 1 cluster se ci sono dati
-                
-                # Prevenire ValueError: n_init must be > 0. n_init predefinito è 10
-                # Se features_scaled.shape[0] < n_clusters, kmeans.fit_predict fallisce.
-                if features_scaled.shape[0] < n_clusters:
-                    st.warning(f"Number of samples ({features_scaled.shape[0]}) is less than n_clusters ({n_clusters}). Adjusting n_clusters.")
-                    n_clusters = features_scaled.shape[0] if features_scaled.shape[0] > 0 else 1
+            features_scaled = StandardScaler().fit_transform(features.T)
+            # Determina il numero di cluster
+            n_clusters = min(8, features_scaled.shape[0] // 10) # n_clusters non deve essere maggiore del numero di campioni
+            if n_clusters < 1:
+                n_clusters = 1
+            
+            # Controllo aggiunto per n_clusters > n_samples (numero di righe in features_scaled)
+            if features_scaled.shape[0] < n_clusters:
+                n_clusters = features_scaled.shape[0] if features_scaled.shape[0] > 0 else 1 # Se samples < cluster, imposta cluster a samples
 
-                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                mood_labels = kmeans.fit_predict(features_scaled)
-                # DEBUG: st.write(f"DEBUG: KMeans successful, n_clusters={n_clusters}, mood_labels.shape={mood_labels.shape}")
-
-        except ValueError as ve:
-            st.warning(f"KMeans clustering failed due to data issue (e.g., constant features or not enough samples): {ve}. Mood labels will be empty. Trace: {traceback.format_exc()}")
-            mood_labels = np.array([])
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10) # n_init aggiunto per KMeans >= 1.2.0
+            mood_labels = kmeans.fit_predict(features_scaled)
         except Exception as e:
-            st.warning(f"KMeans clustering failed unexpectedly: {e}. Mood labels will be empty. Trace: {traceback.format_exc()}")
+            st.warning(f"Clustering fallito: {e}. Trace: {traceback.format_exc()}")
             mood_labels = np.array([])
-    else:
-        st.warning("Features for clustering could not be generated (likely chroma or MFCC were empty). Mood labels will be empty.")
 
-
-    # Gestisci il caso in cui mood_labels è vuoto
     if mood_labels.size == 0:
-        st.warning("Mood labels could not be generated or are empty. Returning original audio as fallback in decomposizione_creativa.")
-        return audio # Fallback se il clustering non produce etichette valide
-
+        return audio
 
     fragment_samples = int(fragment_size * sr)
     if fragment_samples <= 0:
         return audio
 
     hop_length = 512
-    frames_per_fragment = fragment_samples // hop_length
-    if frames_per_fragment <= 0:
-        frames_per_fragment = 1 # Almeno un frame per frammento
+    frames_per_fragment = max(1, fragment_samples // hop_length)
 
     mood_fragments = {mood: [] for mood in np.unique(mood_labels)}
 
     max_mood_idx = len(mood_labels) - frames_per_fragment
-    if max_mood_idx < 0: # Questo può accadere se l'audio è troppo corto o fragment_size è troppo grande
-        st.warning("Audio too short for mood analysis or fragment size too large. Returning original audio as fallback.")
+    if max_mood_idx < 0:
         return audio
 
     for i in range(0, max_mood_idx + 1, frames_per_fragment):
         start_sample = i * hop_length
         end_sample = min(start_sample + fragment_samples, len(audio))
-
         if end_sample > start_sample:
             fragment = audio[start_sample:end_sample]
             if fragment.size > 0:
-                # NUOVO: Assicurati che mood_slice sia non vuoto e contenga un mood valido
-                mood_slice = mood_labels[i:i+frames_per_fragment]
+                mood_slice = mood_labels[i:i + frames_per_fragment]
                 if mood_slice.size > 0:
-                    # CORREZIONE APPLICATA QUI (come da tua indicazione)
-                    mood_slice_list = [int(m) for m in mood_slice.tolist()]  # conversione sicura da np.ndarray a list di int
+                    mood_slice_list = [int(m) for m in mood_slice.tolist()]
                     counts = {}
                     for mood in mood_slice_list:
                         counts[mood] = counts.get(mood, 0) + 1
                     dominant_mood = max(counts, key=counts.get)
-                    
-                    if dominant_mood in mood_fragments:
-                        mood_fragments[dominant_mood].append(fragment)
-                    else:
-                        st.warning(f"Dominant mood {dominant_mood} not in mood_fragments keys. Skipping fragment.")
-                else:
-                    st.warning(f"Mood slice is empty for fragment at index {i}. Skipping fragment.")
-            else:
-                st.warning(f"Fragment at index {i} is empty. Skipping.")
+                    mood_fragments[dominant_mood].append(fragment)
 
-
-    # Filtra i mood che non hanno frammenti validi e verifica la presenza di frammenti validi
     mood_fragments = {k: [f for f in v if f.size > 0] for k, v in mood_fragments.items()}
-    mood_fragments = {k: v for k, v in mood_fragments.items() if v} # Rimuove i mood senza frammenti
+    mood_fragments = {k: v for k, v in mood_fragments.items() if v}
 
-    # Controllo di sicurezza per l'esistenza di frammenti validi dopo la pulizia
-    has_valid_fragments = any(isinstance(v, list) and any(isinstance(f, np.ndarray) and f.size > 0 for f in v) for v in mood_fragments.values())
-    if not has_valid_fragments:
-        st.warning("No valid fragments available for any mood after processing. Returning original audio as fallback.")
+    if not mood_fragments:
         return audio
-
 
     result_fragments = []
-    # Inizializza current_mood solo se ci sono mood disponibili con frammenti
-    available_moods_init = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
-    if len(available_moods_init) == 0:
-        st.warning("No initial available moods with valid fragments to start with. Returning original audio as fallback.")
+    available_moods = [m for m in mood_fragments.keys() if mood_fragments[m]]
+    if not available_moods: # Double check if after filtering, any mood has fragments
         return audio
-    current_mood = random.choice(available_moods_init)
+    current_mood = random.choice(available_moods)
 
     total_expected_fragments = sum(len(frags) for frags in mood_fragments.values())
     max_iterations = total_expected_fragments * 2 if total_expected_fragments > 0 else 100
-
     iteration_count = 0
-    # Rafforza la condizione del while loop con isinstance e verifica i frammenti
-    while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values() if isinstance(v, list)):
+
+    # Condizione del while loop più robusta
+    while iteration_count < max_iterations and any(len(v) > 0 for v in mood_fragments.values()):
         iteration_count += 1
-        
-        # Controlla che il current_mood esista e abbia frammenti
-        if current_mood in mood_fragments and len(mood_fragments[current_mood]) > 0:
+
+        if current_mood in mood_fragments and mood_fragments[current_mood]:
             fragment = random.choice(mood_fragments[current_mood])
-            
-            # FIX per errore "truth value of an array": rimuovi per identità, non per valore
+
+            # Fix: usa confronto per identità
             for idx, f in enumerate(mood_fragments[current_mood]):
                 if f is fragment:
                     del mood_fragments[current_mood][idx]
@@ -788,59 +735,44 @@ def decomposizione_creativa(audio, sr, params):
             if fragment.size == 0:
                 continue
 
-            if fragment.size > 0 and random.random() < emotional_shift: # Aggiunto controllo size
-                emotion_transforms = [
+            if random.random() < emotional_shift:
+                transforms = [
                     lambda x: librosa.effects.pitch_shift(x, sr=sr, n_steps=random.uniform(-3, 3)) if x.size > 0 else np.array([]),
                     lambda x: x * np.power(np.linspace(0.3, 1, len(x)) if len(x) > 0 else np.array([]), random.uniform(0.5, 2)) if x.size > 0 else np.array([]),
-                    lambda x: librosa.effects.time_stretch(x, rate=random.uniform(0.8, 1.3)) if x.size > 0 else np.array([]),
+                    lambda x: librosa.effects.time_stretch(x, rate=random.uniform(0.8, 1.3)) if x.size > 0 else np.array([])
                 ]
-                transform = random.choice(emotion_transforms)
                 try:
-                    transformed_fragment = transform(fragment)
-                    if transformed_fragment.size > 0:
-                        fragment = transformed_fragment
-                    else:
-                        st.warning(f"Emotional shift transform produced empty fragment. Keeping original. Trace: {traceback.format_exc()}")
+                    transformed = random.choice(transforms)(fragment)
+                    if transformed.size > 0:
+                        fragment = transformed
                 except Exception as e:
-                    st.warning(f"Emotional shift transform failed for fragment: {e}. Trace: {traceback.format_exc()}")
-                    fragment = fragment if fragment.size > 0 else np.array([])
-
+                    st.warning(f"Transform fallita per frammento: {e}. Trace: {traceback.format_exc()}")
+                    # Fallback to original if transform fails, to avoid empty fragments
+                    if fragment.size == 0: # If original was empty, keep it empty
+                        fragment = np.array([])
 
             if fragment.size > 0:
                 result_fragments.append(fragment)
-        else:
-            # Se il mood corrente non ha più frammenti o non esiste, cambia mood
-            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
-            if len(available_moods) > 0:
-                current_mood = random.choice(available_moods)
-            else:
-                # Nessun frammento rimanente in nessun mood, esci dal loop
-                break
 
+        # Cambio mood casuale
         if random.random() < discontinuity / 2.0:
-            available_moods = [m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]
-            if len(available_moods) > 0:
-                current_mood = random.choice(available_moods)
-            elif any(len(v) > 0 for v in mood_fragments.values() if isinstance(v, list)): # Fallback se il mood scelto non ha più frammenti
-                 current_mood = random.choice([m for m in mood_fragments.keys() if len(mood_fragments[m]) > 0]) # Scegli un mood a caso tra quelli che hanno ancora frammenti
+            available = [m for m in mood_fragments.keys() if mood_fragments[m]]
+            if available:
+                current_mood = random.choice(available)
+            else: # Se non ci sono più mood con frammenti, esci o gestisci
+                break # Nessun frammento da cui attingere, esci dal loop
 
+        # Inserisce silenzio
         if random.random() < discontinuity / 4.0:
-            silence_duration = random.uniform(0.1, 0.5)
-            silence = np.zeros(int(silence_duration * sr))
+            silence = np.zeros(int(random.uniform(0.1, 0.5) * sr))
             if silence.size > 0:
                 result_fragments.append(silence)
-    
-    # Filtra eventuali frammenti vuoti nel risultato finale prima di concatenare
+
     result_fragments = [f for f in result_fragments if f.size > 0]
-
-    # CORREZIONE APPLICATA QUI (come da tua indicazione)
-    if len(result_fragments) > 0:
-        result = np.concatenate(result_fragments)
+    if result_fragments:
+        return np.concatenate(result_fragments)
     else:
-        st.warning("No valid fragments were assembled in decomposizione_creativa. Returning original audio as fallback.")
-        result = audio # Fallback all'audio originale se non si generano frammenti validi
-
-    return result
+        return audio
 
 def random_chaos(audio, sr, params):
     """Chaos totale: combina tutti i metodi casualmente"""
@@ -897,79 +829,74 @@ def random_chaos(audio, sr, params):
 
     return result
 
-def process_audio(audio_bytes_io, method, params, initial_sr=None):
+def process_audio(uploaded_file, method, params, initial_sr=None):
     """Processa l'audio con il metodo scelto"""
 
-    audio_bytes_io.seek(0) # Assicurati che il puntatore sia all'inizio del file
-    
-    # Crea un file temporaneo per salvare l'audio caricato
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_input_file:
-        tmp_input_file.write(audio_bytes_io.read())
-        original_audio_path_temp = tmp_input_file.name
-
-    audio_original = np.array([])
+    original_audio_path_temp = None
+    output_path = None
     sr = initial_sr
-    
+    audio_original = np.array([]) # Inizializza a vuoto per sicurezza
+
     try:
-        # Carica audio e verifica che non sia nullo
-        # Librosa può dedurre il sample rate se sr=None
+        # Crea un file temporaneo per l'audio originale dal BytesIO
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_input_file:
+            tmp_input_file.write(uploaded_file.read())
+            original_audio_path_temp = tmp_input_file.name
+
+        # Carica audio e determina il sample rate
         audio_original, sr = librosa.load(original_audio_path_temp, sr=None, mono=False)
+
         if audio_original is None or audio_original.size == 0:
             st.error("Il file audio caricato è vuoto o non contiene dati validi dopo il caricamento.")
-            return None, None, None, None
+            return None, None, None # Restituisce None per output_path, sr, original_audio_path_temp
 
-    except Exception as e:
-        st.error(f"Errore nel caricamento del file audio: {e}. Trace: {traceback.format_exc()}")
-        return None, None, None, None
-    finally:
-        # Pulisci il file temporaneo dell'input subito dopo il caricamento in memoria
-        if os.path.exists(original_audio_path_temp):
-            os.unlink(original_audio_path_temp)
-
-    output_path = None
-    try:
+        # Processa l'audio
         processed_audio = np.array([])
-        if audio_original.size > 0 and len(audio_original.shape) > 1:
+        if audio_original.size > 0 and len(audio_original.shape) > 1: # Multicanale
             processed_channels = []
-            for channel in range(audio_original.shape[0]):
-                channel_audio = audio_original[channel]
+            for channel_idx in range(audio_original.shape[0]):
+                channel_audio = audio_original[channel_idx]
                 processed_channel = decompose_audio(channel_audio, sr, method, params)
                 if processed_channel is not None and processed_channel.size > 0:
                     processed_channels.append(processed_channel)
 
             if len(processed_channels) == 0:
                 st.error("La decomposizione ha prodotto risultati vuoti per tutti i canali.")
-                return None, None, None, None
+                return None, None, None
 
             # Assicurati che tutti i canali abbiano la stessa lunghezza minima prima di concatenare
             min_length = min(len(ch) for ch in processed_channels)
             processed_channels = [ch[:min_length] for ch in processed_channels]
             processed_audio = np.array(processed_channels)
-        elif audio_original.size > 0:
+        elif audio_original.size > 0: # Monocanale
             processed_audio = decompose_audio(audio_original, sr, method, params)
-        else: # Audio vuoto all'inizio
+        else: # Audio vuoto all'inizio (dovrebbe essere già gestito dal controllo iniziale, ma per sicurezza)
             st.error("Il file audio caricato è vuoto o non contiene dati validi.")
-            return None, None, None, None
-
+            return None, None, None
 
         if processed_audio is None or processed_audio.size == 0:
             st.error("La decomposizione ha prodotto un file audio vuoto.")
-            return None, None, None, None
+            return None, None, None
 
+        # Salva l'audio processato in un file temporaneo
         output_path = tempfile.mktemp(suffix='.wav')
         if len(processed_audio.shape) > 1:
-            sf.write(output_path, processed_audio.T, sr)
+            sf.write(output_path, processed_audio.T, sr) # Trasponi per soundfile se multicanale
         else:
             sf.write(output_path, processed_audio, sr)
 
-        return output_path, sr, audio_original, None # Restituisce l'array audio_original
+        return output_path, sr, original_audio_path_temp # Restituisce i percorsi dei file temporanei
+
     except Exception as e:
         st.error(f"Errore nel processing: {e}. Dettagli tecnici: {e.__class__.__name__}: {e}. Trace: {traceback.format_exc()}")
-        return None, None, None, None
+        return None, None, None # In caso di errore, restituisce None
     finally:
-        # Pulisci il file temporaneo di output se è stato creato
-        if output_path and os.path.exists(output_path):
-            os.unlink(output_path)
+        # Pulisci il file temporaneo originale qui, dopo che è stato caricato in memoria
+        if original_audio_path_temp and os.path.exists(original_audio_path_temp):
+            try:
+                os.unlink(original_audio_path_temp)
+            except Exception as e:
+                st.warning(f"⚠️ Impossibile eliminare il file temporaneo originale: {original_audio_path_temp} - {e}")
 
 
 def decompose_audio(audio, sr, method, params):
@@ -1049,12 +976,14 @@ def create_visualization(original_audio, processed_audio, sr):
 if uploaded_file is not None:
     st.success(f" File caricato: {uploaded_file.name}")
 
+    # Prepara i parametri comuni
     params = {
         'fragment_size': fragment_size,
         'chaos_level': chaos_level,
         'structure_preservation': structure_preservation
     }
 
+    # Aggiungi i parametri specifici per metodo
     if decomposition_method == "cut_up_sonoro":
         params.update({
             'cut_randomness': cut_randomness,
@@ -1083,95 +1012,125 @@ if uploaded_file is not None:
 
     if st.button(" DECOMPONI E RICOMPONI", type="primary", use_container_width=True):
         with st.spinner(" Decomponendo il brano in arte sonora sperimentale..."):
-            # Passa l'oggetto BytesIO del file caricato direttamente
-            output_path, sr, original_audio_data, _ = process_audio(io.BytesIO(uploaded_file.read()), decomposition_method, params)
+            # Passa l'oggetto uploaded_file direttamente a process_audio
+            output_path, sr, original_audio_path_temp = process_audio(uploaded_file, decomposition_method, params)
 
-            if output_path is not None and sr is not None:
-                # original_audio_data è già l'array NumPy caricato
+            # ✅ Controlli robusti
+            if not output_path or not os.path.exists(output_path):
+                st.error("❌ Errore: il file audio decomposto non è stato generato. Il metodo selezionato potrebbe aver restituito un array vuoto.")
+                # Pulisci original_audio_path_temp se esiste ancora a questo punto
+                if original_audio_path_temp and os.path.exists(original_audio_path_temp):
+                    try:
+                        os.unlink(original_audio_path_temp)
+                    except Exception as e:
+                        st.warning(f"⚠️ Impossibile eliminare il file temporaneo originale: {original_audio_path_temp} - {e}")
+                return
+
+            if not original_audio_path_temp or not os.path.exists(original_audio_path_temp):
+                st.error("❌ Errore: file audio originale temporaneo non trovato.")
+                # Pulisci output_path se esiste ancora a questo punto
+                if output_path and os.path.exists(output_path):
+                    try:
+                        os.unlink(output_path)
+                    except Exception as e:
+                        st.warning(f"⚠️ Impossibile eliminare il file temporaneo di output: {output_path} - {e}")
+                return
+
+            try:
+                original_audio, _ = librosa.load(original_audio_path_temp, sr=sr)
                 processed_audio, _ = librosa.load(output_path, sr=sr)
+            except Exception as e:
+                st.error(f"❌ Errore durante il caricamento dei file audio per la visualizzazione/riproduzione: {e}. Trace: {traceback.format_exc()}")
+                # Pulisci entrambi i file temporanei in caso di errore di caricamento
+                if output_path and os.path.exists(output_path):
+                    try: os.unlink(output_path)
+                    except: pass
+                if original_audio_path_temp and os.path.exists(original_audio_path_temp):
+                    try: os.unlink(original_audio_path_temp)
+                    except: pass
+                return
 
-                col1, col2 = st.columns(2)
+            # UI
+            col1, col2 = st.columns(2)
 
-                with col1:
-                    st.subheader(" Audio Originale")
-                    # Qui puoi usare l'oggetto uploaded_file direttamente o rigenerare l'audio dai dati NumPy
-                    st.audio(uploaded_file.read(), format=uploaded_file.type) # Usa il file caricato originale
-                    uploaded_file.seek(0) # Reset del puntatore dopo la lettura per la riproduzione
+            with col1:
+                st.subheader(" Audio Originale")
+                # Carica l'audio originale direttamente da uploaded_file (che è un BytesIO)
+                uploaded_file.seek(0) # Reset del puntatore prima della riproduzione
+                st.audio(uploaded_file.read(), format=uploaded_file.type)
+                
+                duration_orig = len(original_audio) / sr if original_audio.size > 0 else 0
+                st.info(f"""
+                **Durata:** {duration_orig:.2f} secondi
+                **Sample Rate:** {sr} Hz
+                **Samples:** {len(original_audio):,}
+                """)
 
-                    duration_orig = len(original_audio_data) / sr if original_audio_data.size > 0 else 0
-                    st.info(f"""
-                    **Durata:** {duration_orig:.2f} secondi
-                    **Sample Rate:** {sr} Hz
-                    **Samples:** {len(original_audio_data):,}
-                    """)
-
-                with col2:
-                    st.subheader(" Audio Decomposto")
-                    with open(output_path, 'rb') as f:
-                        audio_bytes = f.read()
-                    st.audio(audio_bytes, format='audio/wav')
-
-                    duration_proc = len(processed_audio) / sr if processed_audio.size > 0 else 0
-                    transform_ratio = duration_proc/duration_orig if duration_orig > 0 else 0
-                    st.info(f"""
-                    **Durata:** {duration_proc:.2f} secondi
-                    **Trasformazione:** {transform_ratio:.2f}x
-                    **Samples:** {len(processed_audio):,}
-                    """)
-
-                st.subheader(" Analisi Spettrale Comparativa")
-                with st.spinner("Generando visualizzazioni..."):
-                    fig = create_visualization(original_audio_data, processed_audio, sr) # Usa original_audio_data
-                    st.pyplot(fig)
-
-                st.subheader(" Download Risultato")
+            with col2:
+                st.subheader(" Audio Decomposto")
                 with open(output_path, 'rb') as f:
                     audio_bytes = f.read()
+                st.audio(audio_bytes, format='audio/wav')
+                
+                duration_proc = len(processed_audio) / sr if processed_audio.size > 0 else 0
+                transform_ratio = duration_proc/duration_orig if duration_orig > 0 else 0
+                st.info(f"""
+                **Durata:** {duration_proc:.2f} secondi
+                **Trasformazione:** {transform_ratio:.2f}x
+                **Samples:** {len(processed_audio):,}
+                """)
 
-                original_name = uploaded_file.name.rsplit('.', 1)[0]
-                output_filename = f"{original_name}_{decomposition_method}.wav"
+            st.subheader(" Analisi Spettrale Comparativa")
+            with st.spinner("Generando visualizzazioni..."):
+                fig = create_visualization(original_audio, processed_audio, sr)
+                st.pyplot(fig)
 
-                st.download_button(
-                    label=f" Scarica {output_filename}",
-                    data=audio_bytes,
-                    file_name=output_filename,
-                    mime="audio/wav",
-                    use_container_width=True
-                )
+            st.subheader(" Download Risultato")
+            # Assicurati che audio_bytes sia disponibile per il download
+            # È già stato letto sopra, quindi riusalo.
+            original_name = uploaded_file.name.rsplit('.', 1)[0]
+            output_filename = f"{original_name}_{decomposition_method}.wav"
 
-                with st.expander(" Analisi Tecnica Dettagliata"):
-                    col1, col2 = st.columns(2)
+            st.download_button(
+                label=f" Scarica {output_filename}",
+                data=audio_bytes,
+                file_name=output_filename,
+                mime="audio/wav",
+                use_container_width=True
+            )
 
-                    with col1:
-                        st.write("**Audio Originale:**")
-                        if original_audio_data.size > 0:
-                            orig_structure = analyze_audio_structure(original_audio_data, sr)
-                            st.write(f"- Tempo stimato: {orig_structure['tempo']:.1f} BPM")
-                            st.write(f"- Beat rilevati: {len(orig_structure['beats'])}")
-                            st.write(f"- Onset rilevati: {len(orig_structure['onset_times'])}")
-                            if orig_structure['spectral_centroids'].size > 0:
-                                st.write(f"- Centroide spettrale medio: {np.mean(orig_structure['spectral_centroids']):.1f} Hz")
-                            else:
-                                st.write("- Centroide spettrale medio: N/A")
-                        else:
-                            st.write("Nessun dato audio per l'analisi.")
+            with st.expander(" Analisi Tecnica Dettagliata"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**Audio Originale:**")
+                    if original_audio.size > 0:
+                        orig_structure = analyze_audio_structure(original_audio, sr)
+                        st.write(f"- Tempo stimato: {orig_structure['tempo']:.1f} BPM")
+                        st.write(f"- Beat rilevati: {len(orig_structure['beats'])}")
+                        st.write(f"- Onset rilevati: {len(orig_structure['onset_times'])}")
+                        st.write(f"- Centroide spettrale medio: {np.mean(orig_structure['spectral_centroids']):.1f} Hz" if orig_structure['spectral_centroids'].size > 0 else "- Centroide spettrale medio: N/A")
+                    else:
+                        st.write("Nessun dato audio per l'analisi.")
 
-                    with col2:
-                        st.write("**Audio Processato:**")
-                        if processed_audio.size > 0:
-                            proc_structure = analyze_audio_structure(processed_audio, sr)
-                            st.write(f"- Tempo stimato: {proc_structure['tempo']:.1f} BPM")
-                            st.write(f"- Beat rilevati: {len(proc_structure['beats'])}")
-                            st.write(f"- Onset rilevati: {len(proc_structure['onset_times'])}")
-                            if proc_structure['spectral_centroids'].size > 0:
-                                st.write(f"- Centroide spettrale medio: {np.mean(proc_structure['spectral_centroids']):.1f} Hz")
-                            else:
-                                st.write("- Centroide spettrale medio: N/A")
-                        else:
-                            st.write("Nessun dato audio per l'analisi.")
+                with col2:
+                    st.write("**Audio Processato:**")
+                    if processed_audio.size > 0:
+                        proc_structure = analyze_audio_structure(processed_audio, sr)
+                        st.write(f"- Tempo stimato: {proc_structure['tempo']:.1f} BPM")
+                        st.write(f"- Beat rilevati: {len(proc_structure['beats'])}")
+                        st.write(f"- Onset rilevati: {len(proc_structure['onset_times'])}")
+                        st.write(f"- Centroide spettrale medio: {np.mean(proc_structure['spectral_centroids']):.1f} Hz" if proc_structure['spectral_centroids'].size > 0 else "- Centroide spettrale medio: N/A")
+                    else:
+                        st.write("Nessun dato audio per l'analisi.")
 
-            else:
-                st.error(" Errore nel processing dell'audio. Il risultato potrebbe essere vuoto o non valido.")
+            # Pulisci i file temporanei dopo l'uso completo
+            try:
+                if output_path and os.path.exists(output_path):
+                    os.unlink(output_path)
+                if original_audio_path_temp and os.path.exists(original_audio_path_temp):
+                    os.unlink(original_audio_path_temp)
+            except Exception as e:
+                st.warning(f"⚠️ Impossibile eliminare file temporanei: {e}")
 
 else:
     st.markdown("""
