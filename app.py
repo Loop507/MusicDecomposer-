@@ -37,29 +37,27 @@ uploaded_file = st.file_uploader(
 )
 
 # PARAMETRI FISSI PER MASSIMA ELABORAZIONE (NON PIÙ DIPENDENTI DALL'INTENSITÀ)
-# Ho rimosso i preset 'soft', 'medio', 'hard'
-# Questi parametri ora rappresentano un'elaborazione "massima" o "profonda"
 FIXED_PARAMS = {
     'cut_up_sonoro': {
-        'fragment_size': 0.8, # Frammenti più piccoli per maggiore manipolazione
+        'fragment_size': 0.8,
         'chaos_level': 0.9,
         'structure_preservation': 0.2,
         'cut_randomness': 0.8,
-        'reassembly_style': 'spiral' # Stile più complesso
+        'reassembly_style': 'spiral'
     },
     'remix_destrutturato': {
-        'fragment_size': 0.6, # Frammenti più piccoli
+        'fragment_size': 0.6,
         'chaos_level': 0.8,
         'structure_preservation': 0.3,
         'beat_preservation': 0.3,
-        'melody_fragmentation': 1.8 # Maggiore frammentazione
+        'melody_fragmentation': 1.8
     },
     'musique_concrete': {
-        'fragment_size': 0.5, # Grani più piccoli
+        'fragment_size': 0.5,
         'chaos_level': 0.8,
         'structure_preservation': 0.2,
         'grain_size': 0.1,
-        'texture_density': 1.5 # Maggiore densità
+        'texture_density': 1.5 # Questa densità verrà mitigata dai limiti di grani
     },
     'decostruzione_postmoderna': {
         'fragment_size': 1.0,
@@ -72,18 +70,17 @@ FIXED_PARAMS = {
         'fragment_size': 0.8,
         'chaos_level': 0.8,
         'structure_preservation': 0.2,
-        'discontinuity': 1.2, # Maggiore discontinuità
+        'discontinuity': 1.2,
         'emotional_shift': 1.0
     },
     'random_chaos': {
         'fragment_size': 1.0,
-        'chaos_level': 1.0, # Massimo caos
+        'chaos_level': 1.0,
         'structure_preservation': 0.1
     }
 }
 
 def analyze_audio_structure(audio, sr):
-    """Analizza la struttura del brano per identificare elementi musicali - Versione ottimizzata"""
     if audio.size == 0:
         return {
             'tempo': 0, 'beats': np.array([]), 'chroma': np.array([]),
@@ -91,9 +88,7 @@ def analyze_audio_structure(audio, sr):
             'onset_times': np.array([]), 'onset_frames': np.array([])
         }
 
-    # Per file lunghi, usa solo una porzione per l'analisi
-    # MANTENUTO IL LIMITE DI 60 SECONDI PER L'ANALISI INIZIALE PER PREVENIRE BLOCCHI
-    max_analysis_length = min(len(audio), sr * 60)  # Massimo 60 secondi per analisi
+    max_analysis_length = min(len(audio), sr * 60)
     analysis_audio = audio[:max_analysis_length]
 
     tempo = 0
@@ -107,7 +102,6 @@ def analyze_audio_structure(audio, sr):
         tempo = 0
         beats = np.array([])
 
-    # Analisi semplificata per le altre feature
     chroma = np.array([])
     mfcc = np.array([])
     spectral_centroids = np.array([])
@@ -115,7 +109,6 @@ def analyze_audio_structure(audio, sr):
     onset_times = np.array([])
 
     try:
-        # Usa hop_length più grande per velocizzare
         chroma = librosa.feature.chroma_stft(y=analysis_audio, sr=sr, hop_length=2048)
         mfcc = librosa.feature.mfcc(y=analysis_audio, sr=sr, n_mfcc=13, hop_length=2048)
         spectral_centroids = librosa.feature.spectral_centroid(y=analysis_audio, sr=sr, hop_length=2048)[0]
@@ -135,15 +128,11 @@ def analyze_audio_structure(audio, sr):
     }
 
 def safe_pitch_shift(audio, sr, n_steps):
-    """Pitch shift sicuro con gestione errori - Versione ottimizzata"""
     try:
         if audio.size == 0:
             return np.array([])
         
-        # Limita il pitch shift per evitare artefatti estremi
         n_steps = np.clip(n_steps, -12, 12)
-        
-        # Per audio molto lunghi, usa hop_length più grande
         hop_length = 512 if len(audio) < sr * 30 else 1024
         
         result = librosa.effects.pitch_shift(audio, sr=sr, n_steps=n_steps, hop_length=hop_length)
@@ -153,15 +142,11 @@ def safe_pitch_shift(audio, sr, n_steps):
         return audio
 
 def safe_time_stretch(audio, rate):
-    """Time stretch sicuro con gestione errori - Versione ottimizzata"""
     try:
         if audio.size == 0:
             return np.array([])
         
-        # Limita il rate per evitare artefatti estremi
         rate = np.clip(rate, 0.25, 4.0)
-        
-        # Per audio molto lunghi, usa hop_length più grande
         hop_length = 512 if len(audio) < 44100 * 30 else 1024
         
         result = librosa.effects.time_stretch(audio, rate=rate, hop_length=hop_length)
@@ -171,7 +156,6 @@ def safe_time_stretch(audio, rate):
         return audio
 
 def cut_up_sonoro(audio, sr, params):
-    """Implementa la tecnica cut-up applicata all'audio - Versione ottimizzata"""
     fragment_size = params['fragment_size']
     randomness = params.get('cut_randomness', 0.7)
     reassembly = params.get('reassembly_style', 'random')
@@ -190,7 +174,7 @@ def cut_up_sonoro(audio, sr, params):
     if max_fragments_to_process > 0:
         step = max(1, len(audio) // max_fragments_to_process)
     else:
-        step = fragment_samples # Fallback
+        step = fragment_samples
 
     for i in range(0, len(audio) - fragment_samples + 1, step):
         if len(fragments) >= max_fragments_to_process:
@@ -221,7 +205,6 @@ def cut_up_sonoro(audio, sr, params):
     if len(fragments) == 0:
         return np.array([])
 
-    # Applica lo stile di riassemblaggio
     if reassembly == 'random':
         random.shuffle(fragments)
     elif reassembly == 'reverse':
@@ -250,7 +233,6 @@ def cut_up_sonoro(audio, sr, params):
     return result
 
 def remix_destrutturato(audio, sr, params):
-    """Remix che mantiene elementi riconoscibili - Versione ottimizzata"""
     fragment_size = params['fragment_size']
     beat_preservation = params.get('beat_preservation', 0.4)
     melody_fragmentation = params.get('melody_fragmentation', 1.5)
@@ -258,7 +240,6 @@ def remix_destrutturato(audio, sr, params):
     if audio.size == 0:
         return np.array([])
 
-    # Analisi semplificata per file lunghi
     structure = analyze_audio_structure(audio, sr)
     beats = structure['beats']
 
@@ -267,7 +248,7 @@ def remix_destrutturato(audio, sr, params):
         return audio
 
     max_cuts_based_on_length = len(audio) // fragment_samples
-    max_cuts = min(max_cuts_based_on_length, 200) # Limite massimo di 200 tagli
+    max_cuts = min(max_cuts_based_on_length, 200)
 
     cut_points = []
     if beat_preservation > 0.5 and beats.size > 0:
@@ -280,7 +261,7 @@ def remix_destrutturato(audio, sr, params):
             if (len(audio) // fragment_samples) > 0:
                 cut_points = sorted(random.sample(range(0, len(audio), fragment_samples), min(num_cuts, (len(audio) // fragment_samples))))
             else:
-                cut_points = [] # Nessun punto di taglio se l'audio è troppo corto
+                cut_points = []
 
     if len(cut_points) == 0:
         return audio
@@ -296,7 +277,7 @@ def remix_destrutturato(audio, sr, params):
         fragment = audio[start:end]
 
         if fragment.size > 0:
-            if random.random() < melody_fragmentation / 2.0:  # Aumentata probabilità
+            if random.random() < melody_fragmentation / 2.0:
                 try:
                     shift_steps = random.uniform(-6, 6)
                     fragment = safe_pitch_shift(fragment, sr, shift_steps)
@@ -316,7 +297,6 @@ def remix_destrutturato(audio, sr, params):
     if len(fragments) == 0:
         return np.array([])
 
-    # Riassemblaggio semplificato
     if beat_preservation > 0.3 and len(fragments) > 1:
         preserve_count = int(len(fragments) * beat_preservation)
         preserve_indices = random.sample(range(len(fragments)), min(preserve_count, len(fragments)))
@@ -363,7 +343,7 @@ def remix_destrutturato(audio, sr, params):
     return result
 
 def musique_concrete(audio, sr, params):
-    """Applica tecniche di musique concrète - Versione ottimizzata e più robusta"""
+    """Applica tecniche di musique concrète - Versione ottimizzata e più robusta per prevenire crash"""
     grain_size = params.get('grain_size', 0.1)
     texture_density = params.get('texture_density', 1.0)
     chaos_level = params['chaos_level']
@@ -375,15 +355,21 @@ def musique_concrete(audio, sr, params):
     if grain_samples <= 0:
         return audio
 
-    max_grains_based_on_length = len(audio) // (grain_samples // 4) 
-    max_grains = min(max_grains_based_on_length, 1000) 
+    # VERO CAMBIAMENTO: Ridotto il limite massimo di grani da ESTRARRE
+    # Questo è il fattore più critico per la memoria e CPU
+    max_grains_to_extract = 500 # Precedentemente 1000, ora ridotto
+    
+    # Questo calcola quanti grani teoricamente si potrebbero estrarre con un passo di grain_samples // 4
+    max_grains_based_on_length = len(audio) // max(1, grain_samples // 4) 
+    max_grains = min(max_grains_based_on_length, max_grains_to_extract) 
 
-    step = max(grain_samples // 4, len(audio) // max_grains) if max_grains > 0 else grain_samples // 4
-
+    step = max(grain_samples // 4, 1) # Assicura che step sia almeno 1 per non avere divisione per zero
+    if max_grains > 0 and len(audio) > 0:
+        step = max(grain_samples // 4, len(audio) // max_grains) 
+    
     grains = []
-    # Assicurati che il ciclo non cerchi di accedere oltre la fine di audio
     for i in range(0, len(audio) - grain_samples + 1, step):
-        if len(grains) >= max_grains: # Limita il numero di grani estratti
+        if len(grains) >= max_grains:
             break
         
         grain = audio[i:i + grain_samples]
@@ -420,17 +406,20 @@ def musique_concrete(audio, sr, params):
     if len(grains) == 0:
         return np.array([])
 
-    num_grains_output = min(int(len(grains) * texture_density), 500) 
+    # VERO CAMBIAMENTO: Ridotto il numero di grani da INCLUDERE nell'output
+    # Questo è il fattore critico per la RAM e la velocità di mixaggio
+    max_output_grains = 250 # Precedentemente 500, ora ridotto
+    num_grains_output = min(int(len(grains) * texture_density), max_output_grains) 
+    
     if num_grains_output <= 0:
         return np.array([])
 
-    # Seleziona un sottoinsieme casuale dei grani, se ce ne sono troppi
     if num_grains_output < len(grains):
         grains = random.sample(grains, num_grains_output)
 
-    # La lunghezza massima del risultato può essere più grande per accogliere più grani sovrapposti
-    # Limita la lunghezza finale a non più di 2 volte la durata originale o un massimo sensato
-    max_length_samples = min(int(len(audio) * (1 + texture_density * 0.5)), len(audio) * 2) 
+    # VERO CAMBIAMENTO: Limitata la lunghezza massima dell'array finale
+    # Questo previene allocazioni di memoria esagerate
+    max_length_samples = min(int(len(audio) * 1.5), sr * 120) # Max 1.5x durata originale o 2 minuti
     result = np.zeros(max_length_samples, dtype=audio.dtype)
 
     for grain in grains:
@@ -438,7 +427,13 @@ def musique_concrete(audio, sr, params):
             continue
 
         if grain.size < max_length_samples:
-            start_pos = random.randint(0, max_length_samples - grain.size)
+            # Assicurati che start_pos e end_pos siano validi
+            max_start_pos = max_length_samples - grain.size
+            if max_start_pos < 0: # Se il grano è più grande del risultato massimo, non aggiungerlo o troncato
+                grain = grain[:max_length_samples] # Tronca il grano
+                max_start_pos = 0 # Inizia da 0
+            
+            start_pos = random.randint(0, max(0, max_start_pos)) # Assicurati che start_pos non sia negativo
             end_pos = start_pos + grain.size
             
             # Assicurati che grain non ecceda la dimensione di result e che l'indice sia valido
@@ -456,7 +451,6 @@ def musique_concrete(audio, sr, params):
     return result
 
 def decostruzione_postmoderna(audio, sr, params):
-    """Decostruzione postmoderna ottimizzata per performance e più robusta"""
     irony_level = params.get('irony_level', 0.5)
     context_shift = params.get('context_shift', 0.6)
     fragment_size = params['fragment_size']
@@ -487,8 +481,7 @@ def decostruzione_postmoderna(audio, sr, params):
         energy = np.sqrt(np.mean(fragment**2))
         
         mean_sample_energy = 0
-        if len(audio) > 0 and fragment_samples > 0: # Assicurati che l'audio non sia vuoto e fragment_samples > 0
-            # Campiona in modo più sicuro per evitare divisione per zero o indici fuori limite
+        if len(audio) > 0 and fragment_samples > 0: 
             sample_count = min(10, (len(audio) // fragment_samples) if fragment_samples > 0 else 1)
             if sample_count > 0:
                 sample_indices = np.linspace(0, len(audio) - fragment_samples, sample_count, dtype=int)
@@ -563,25 +556,20 @@ def decostruzione_postmoderna(audio, sr, params):
         if next_fragment.size == 0:
             continue
 
-        # Calcola la lunghezza effettiva del crossfade
-        crossfade_samples_desired = int(0.02 * sr) # 0.02 secondi di crossfade
+        crossfade_samples_desired = int(0.02 * sr) 
         current_crossfade_len = min(crossfade_samples_desired, result.size, next_fragment.size)
         
         if current_crossfade_len > 0:
-            # Fade out del risultato corrente
             result_overlap = result[-current_crossfade_len:]
             fade_out = np.linspace(1, 0, current_crossfade_len)
             result[-current_crossfade_len:] = result_overlap * fade_out
             
-            # Fade in del frammento successivo
             next_fragment_overlap = next_fragment[:current_crossfade_len]
             fade_in = np.linspace(0, 1, current_crossfade_len)
             next_fragment_faded_in = next_fragment_overlap * fade_in
             
-            # Combina le parti sovrapposte
             combined_overlap = result[-current_crossfade_len:] + next_fragment_faded_in
             
-            # Concatenare il risultato senza la parte sovrapposta, poi la combinazione, poi il resto del next_fragment
             result = np.concatenate([result[:-current_crossfade_len], combined_overlap, next_fragment[current_crossfade_len:]])
         else:
             result = np.concatenate([result, next_fragment])
@@ -594,7 +582,6 @@ def decostruzione_postmoderna(audio, sr, params):
     return result
 
 def decomposizione_creativa(audio, sr, params):
-    """Decomposizione Creativa ottimizzata"""
     discontinuity = params.get('discontinuity', 1.0)
     emotional_shift = params.get('emotional_shift', 0.8)
     fragment_size = params['fragment_size']
@@ -681,46 +668,45 @@ def random_chaos(audio, sr, params):
     processed_audio = audio.copy()
 
     # Pitch Shift
-    if random.random() < 0.6 * chaos_level: # Probabilità aumentata
+    if random.random() < 0.6 * chaos_level:
         shift_steps = random.uniform(-12, 12) 
         processed_audio = safe_pitch_shift(processed_audio, sr, shift_steps)
         if processed_audio.size == 0: 
             return np.array([])
 
     # Time Stretch
-    if random.random() < 0.6 * chaos_level: # Probabilità aumentata
+    if random.random() < 0.6 * chaos_level:
         stretch_rate = random.uniform(0.25, 4.0) 
         processed_audio = safe_time_stretch(processed_audio, stretch_rate)
         if processed_audio.size == 0: 
             return np.array([])
 
     # Inversione casuale
-    if random.random() < 0.5 * chaos_level: # Probabilità aumentata
-        if processed_audio.size > sr * 2 and random.random() < 0.8: # Più probabile su segmenti lunghi
-            segment_len = int(random.uniform(sr * 1.5, sr * 7)) # Inverte segmenti più lunghi (1.5-7 sec)
+    if random.random() < 0.5 * chaos_level:
+        if processed_audio.size > sr * 2 and random.random() < 0.8:
+            segment_len = int(random.uniform(sr * 1.5, sr * 7)) 
             start_idx = random.randint(0, max(0, processed_audio.size - segment_len))
             end_idx = min(processed_audio.size, start_idx + segment_len)
             if end_idx > start_idx:
                 processed_audio[start_idx:end_idx] = processed_audio[start_idx:end_idx][::-1]
         else:
-            processed_audio = processed_audio[::-1] # Inverte tutto
+            processed_audio = processed_audio[::-1]
 
     # Rumore
-    if random.random() < 0.5 * chaos_level: # Probabilità aumentata
+    if random.random() < 0.5 * chaos_level:
         if processed_audio.size > 0:
-            noise_amplitude = random.uniform(0.02, 0.2) * chaos_level # Più rumore
+            noise_amplitude = random.uniform(0.02, 0.2) * chaos_level 
             noise = np.random.normal(0, noise_amplitude, processed_audio.size)
             processed_audio = processed_audio + noise
 
     # Frammentazione e riassemblaggio caotico
-    if random.random() < 0.7 * chaos_level: # Probabilità aumentata
+    if random.random() < 0.7 * chaos_level:
         if processed_audio.size > 0:
-            # Frammenti più piccoli e casuali
-            max_fragment_len = int(sr * 3) # Frammenti fino a 3 secondi
-            min_fragment_len = int(sr * 0.1) # Frammenti da 0.1 secondi
+            max_fragment_len = int(sr * 3) 
+            min_fragment_len = int(sr * 0.1) 
             chaos_fragments = []
             current_pos = 0
-            max_fragments_in_chaos = 100 # Aumentato limite numero frammenti per Random Chaos
+            max_fragments_in_chaos = 100 
             
             while current_pos < processed_audio.size and len(chaos_fragments) < max_fragments_in_chaos:
                 frag_len = min(random.randint(min_fragment_len, max_fragment_len), 
@@ -729,18 +715,16 @@ def random_chaos(audio, sr, params):
                     break
                 fragment = processed_audio[current_pos : current_pos + frag_len]
                 
-                # Aumenta le possibilità di manipolazione sui singoli frammenti
-                if random.random() < 0.3 * chaos_level: # Aumenta inversione sui frammenti
+                if random.random() < 0.3 * chaos_level:
                     fragment = fragment[::-1]
-                if random.random() < 0.2 * chaos_level: # Pitch shift leggero
+                if random.random() < 0.2 * chaos_level:
                     fragment = safe_pitch_shift(fragment, sr, random.uniform(-4, 4))
                 
                 chaos_fragments.append(fragment)
-                current_pos += frag_len + int(sr * random.uniform(0, 0.5)) # Spazi/sovrapposizioni più variabili
+                current_pos += frag_len + int(sr * random.uniform(0, 0.5))
 
             if chaos_fragments:
                 random.shuffle(chaos_fragments)
-                # Concatenazione con crossfade più aggressivo per evitare click e creare caos
                 result_chaos = chaos_fragments[0]
                 for next_frag_chaos in chaos_fragments[1:]:
                     if result_chaos.size == 0:
@@ -749,12 +733,10 @@ def random_chaos(audio, sr, params):
                     if next_frag_chaos.size == 0:
                         continue
                     
-                    # Crossfade più corto e caotico
                     crossfade_len_chaos = int(sr * random.uniform(0.005, 0.03)) 
                     crossfade_len_chaos = min(crossfade_len_chaos, result_chaos.size // 2, next_frag_chaos.size // 2)
                     
                     if crossfade_len_chaos > 0:
-                        # Sovrapposizione diretta senza fade, per un effetto più "tagliente"
                         result_chaos = np.concatenate([result_chaos[:-crossfade_len_chaos], next_frag_chaos])
                     else:
                         result_chaos = np.concatenate([result_chaos, next_frag_chaos])
@@ -770,7 +752,6 @@ def random_chaos(audio, sr, params):
 
 # Logica principale per processare l'audio
 if uploaded_file is not None:
-    # Sample rate fisso a 22050 Hz
     target_sr = 22050
     st.sidebar.subheader("⚙️ Impostazioni Caricamento Audio")
     st.sidebar.markdown(f"**Sample Rate fisso per l'elaborazione:** `{target_sr} Hz` (Qualità Radio)")
@@ -781,8 +762,7 @@ if uploaded_file is not None:
             tmp_file.write(uploaded_file.read())
             tmp_file_path = tmp_file.name
 
-        # Leggi l'audio con limitazione a 5 minuti e il sample rate fisso
-        audio, sr = librosa.load(tmp_file_path, sr=target_sr, duration=300)  # Massimo 5 minuti
+        audio, sr = librosa.load(tmp_file_path, sr=target_sr, duration=300)
 
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -899,7 +879,6 @@ if uploaded_file is not None:
                             use_container_width=True
                         )
 
-                        # SINTESI ARTISTICA DELLA DECOMPOSIZIONE
                         technique_descriptions = {
                             "cut_up_sonoro": """
                             Il metodo **"Cut-up Sonoro"** si ispira a una tecnica letteraria dove il testo viene frammentato e riassemblato. Il brano viene diviso in sezioni, che vengono poi **tagliate e riassemblate in un ordine casuale o predefinito** (come inversione o palindromo). Questo crea un effetto di collage sonoro, dove il significato originale è destrutturato per rivelare nuove connessioni e pattern imprevedibili.
