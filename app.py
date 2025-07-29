@@ -750,13 +750,14 @@ def random_chaos(audio, sr, params):
     
     return processed_audio
 
-def apply_heavy_loop_decomposition(audio_segment, sr):
+def apply_heavy_loop_decomposition(audio_segment, sr, target_length_samples): # Aggiunto target_length_samples
     """
     Applica una decomposizione molto aggressiva e casuale a un segmento audio.
     Questo è il nuovo "stile" per la creazione dei loop.
+    Assicura che l'output abbia la lunghezza esatta di target_length_samples.
     """
     if audio_segment.size == 0:
-        return np.array([])
+        return np.zeros(target_length_samples, dtype=np.float32)
 
     processed_segment = audio_segment.copy()
 
@@ -767,13 +768,15 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
     if processed_segment.size > 0:
         shift_steps = random.uniform(-10, 10)
         processed_segment = safe_pitch_shift(processed_segment, sr, shift_steps)
-        if processed_segment.size == 0: return np.array([])
+        # Se il pitch shift ha reso l'array vuoto (audio troppo corto), riempi con zeri
+        if processed_segment.size == 0: processed_segment = np.zeros(audio_segment.size, dtype=np.float32)
 
     # 2. Time Stretch casuale e significativo
     if processed_segment.size > 0:
         stretch_rate = random.uniform(0.5, 2.0)
         processed_segment = safe_time_stretch(processed_segment, stretch_rate)
-        if processed_segment.size == 0: return np.array([])
+        # Se il time stretch ha reso l'array vuoto, riempi con zeri
+        if processed_segment.size == 0: processed_segment = np.zeros(audio_segment.size, dtype=np.float32)
 
     # 3. Frammentazione e riassemblaggio iper-caotico
     # Assicurati che il segmento sia abbastanza lungo per la frammentazione
@@ -829,7 +832,6 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
                 
                 # Assicurati che il segmento per il rumore sia valido
                 if end_impulse > impulse_pos:
-                    # CORREZIONE QUI: la dimensione del rumore deve essere (end_impulse - impulse_pos)
                     noise_segment_size = end_impulse - impulse_pos 
                     processed_segment[impulse_pos:end_impulse] += np.random.normal(0, random.uniform(0.1, 0.3), noise_segment_size)
 
@@ -841,7 +843,17 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
             processed_segment = processed_segment / max_val * 0.9 # Normalizza un po' più basso per evitare clipping nel loop
         else: # Se max_val è 0 (audio silenzioso), assicurati che non sia NaN o Inf
             processed_segment = np.zeros_like(processed_segment)
+    else:
+        # Se per qualche motivo processed_segment è vuoto qui, riempilo con zeri
+        processed_segment = np.zeros(audio_segment.size, dtype=np.float32)
 
+    # Adatta la lunghezza finale al target_length_samples
+    if len(processed_segment) > target_length_samples:
+        processed_segment = processed_segment[:target_length_samples]
+    elif len(processed_segment) < target_length_samples:
+        padding = np.zeros(target_length_samples - len(processed_segment), dtype=processed_segment.dtype)
+        processed_segment = np.concatenate((processed_segment, padding))
+    
     return processed_segment
 
 def create_loop(original_audio, sr, loop_duration_sec): # Rimosso num_repetitions
@@ -861,32 +873,32 @@ def create_loop(original_audio, sr, loop_duration_sec): # Rimosso num_repetition
 
     if len(original_audio) < loop_segment_length_samples:
         st.error(f"❌ Audio originale troppo breve ({len(original_audio)/sr:.2f}s) per creare un loop di {loop_duration_sec:.2f}s.")
-        return np.array([])
-    
-    # Seleziona il segmento iniziale dall'audio ORIGINALE della durata esatta desiderata
-    segment_to_decompose = original_audio[:loop_segment_length_samples].copy()
+        # Se l'audio originale è troppo corto, restituisci un segmento decomposto della sua lunghezza massima
+        segment_to_decompose = original_audio.copy()
+        st.warning(f"⚠️ Creando un loop della durata massima possibile ({len(segment_to_decompose)/sr:.2f}s) data la brevità dell'audio originale.")
+    else:
+        # Seleziona il segmento iniziale dall'audio ORIGINALE della durata esatta desiderata
+        segment_to_decompose = original_audio[:loop_segment_length_samples].copy()
     
     if segment_to_decompose.size == 0:
         st.error("❌ Il segmento selezionato per il loop è vuoto dopo il taglio iniziale.")
         return np.array([])
 
     # 2. Applica la decomposizione "molto decomposto" al segmento
-    st.info(f"🌀 Applicando una decomposizione 'random chaos' al segmento di {loop_duration_sec:.2f} secondi...")
-    decomposed_loop_segment = apply_heavy_loop_decomposition(segment_to_decompose, sr)
+    st.info(f"🌀 Applicando una decomposizione 'random chaos' al segmento di {len(segment_to_decompose)/sr:.2f} secondi...")
+    
+    # Passa la lunghezza target per assicurare che apply_heavy_loop_decomposition restituisca la lunghezza corretta
+    decomposed_loop_segment = apply_heavy_loop_decomposition(segment_to_decompose, sr, loop_segment_length_samples) 
     
     if decomposed_loop_segment.size == 0:
         st.error("❌ La decomposizione del segmento di loop ha prodotto un audio vuoto o non riproducibile. Prova con una durata del loop diversa o un brano originale più lungo.")
         return np.array([])
 
-    # 3. Assicurati che il segmento decomposto abbia la lunghezza esatta del loop desiderato
-    if len(decomposed_loop_segment) > loop_segment_length_samples:
-        decomposed_loop_segment = decomposed_loop_segment[:loop_segment_length_samples]
-    elif len(decomposed_loop_segment) < loop_segment_length_samples:
-        padding = np.zeros(loop_segment_length_samples - len(decomposed_loop_segment))
-        decomposed_loop_segment = np.concatenate((decomposed_loop_segment, padding))
+    # La funzione apply_heavy_loop_decomposition ora gestisce l'adattamento della lunghezza.
+    # Non è più necessario adattare la lunghezza qui.
 
     # 4. Ritorna il singolo segmento decomposto, senza ripetizioni
-    st.success(f"✅ Loop decomposto generato! Un singolo segmento di {loop_duration_sec:.2f} secondi (dall'originale e decomposto in modo casuale).")
+    st.success(f"✅ Loop decomposto generato! Un singolo segmento di {len(decomposed_loop_segment)/sr:.2f} secondi (dall'originale e decomposto in modo casuale).")
     return decomposed_loop_segment
 
 
@@ -1021,7 +1033,7 @@ if uploaded_file is not None:
 
                 loop_duration_option = st.radio(
                     "Durata del segmento per il Loop (secondi):",
-                    (2.0, 4.0, 8.0, 15.0), # Opzioni in secondi
+                    (2.0, 4.0, 8.0), # Opzioni in secondi (rimosso 15.0)
                     format_func=lambda x: f"{x:.1f} secondi",
                     key="loop_duration_radio"
                 )
@@ -1257,7 +1269,7 @@ else:
             * **Clicca "SCOMPONI E RICOMPONI"** per generare l'arte sonora.
         4.  **CREA LOOP DECOMPOSTO** (ora nella sidebar):
             * Indipendentemente dalla decomposizione principale, puoi creare un **singolo segmento loop molto decomposto** direttamente da un segmento del tuo brano originale.
-            * **Scegli la durata in secondi** del segmento che vuoi looppare (es. 2, 4, 8, 15 secondi).
+            * **Scegli la durata in secondi** del segmento che vuoi looppare (es. 2, 4, 8 secondi).
             * **Clicca "Genera Singolo Segmento Loop Decomposto"**. Il segmento verrà manipolato in modo caotico.
             * Questo segmento è pensato per essere looppato manualmente nel tuo software preferito.
 
@@ -1270,7 +1282,7 @@ else:
         -   **🌪️ Random Chaos**: Trasformazioni altamente imprevedibili e massimali.
         
         ### Loop Decomposto:
-        -   Una nuova funzionalità che applica un insieme di trasformazioni casuali e aggressive (pitch shift, time stretch, inversione, frammentazione, rumore) a un piccolo segmento del tuo audio originale. Il risultato è un **singolo segmento audio decomposto e caotico**, da utilizzare come base per i tuoi loop.
+        -   Una nuova funzionalità che applica un insieme di trasformazioni casuali e aggressive (pitch shift, time stretch, inversione, frammentazione, rumore) a un piccolo segmento del tuo audio originale. Il risultato è un **singolo segmento audio decomposto e caotico**, da utilizzare come base per i tuoi loop. La durata del loop sarà **esattamente** quella selezionata, senza parti silenziose.
 
         ### Ottimizzazioni:
         -   ⚡ Tutti i metodi sono ora ottimizzati per file fino a 5 minuti con elaborazione approfondita.
