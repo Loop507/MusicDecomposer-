@@ -131,6 +131,10 @@ def safe_pitch_shift(audio, sr, n_steps):
         if audio.size == 0:
             return np.array([])
         
+        # librosa.effects.pitch_shift richiede audio abbastanza lungo
+        if audio.size < 2048: # O un valore appropriato per hop_length * 2 o più
+             return audio # Non shiftare audio troppo corto
+
         n_steps = np.clip(n_steps, -12, 12)
         hop_length = 512 if len(audio) < sr * 30 else 1024
         
@@ -145,6 +149,10 @@ def safe_time_stretch(audio, rate):
         if audio.size == 0:
             return np.array([])
         
+        # librosa.effects.time_stretch richiede audio abbastanza lungo
+        if audio.size < 2048: # O un valore appropriato per hop_length * 2 o più
+            return audio # Non stretchare audio troppo corto
+
         rate = np.clip(rate, 0.25, 4.0)
         hop_length = 512 if len(audio) < 44100 * 30 else 1024
         
@@ -660,6 +668,7 @@ def random_chaos(audio, sr, params):
     if random.random() < 0.6 * chaos_level:
         shift_steps = random.uniform(-12, 12) 
         processed_audio = safe_pitch_shift(processed_audio, sr, shift_steps)
+        # Check if pitch shift resulted in empty array (e.g. if audio was too short)
         if processed_audio.size == 0: 
             return np.array([])
 
@@ -667,6 +676,7 @@ def random_chaos(audio, sr, params):
     if random.random() < 0.6 * chaos_level:
         stretch_rate = random.uniform(0.25, 4.0) 
         processed_audio = safe_time_stretch(processed_audio, stretch_rate)
+        # Check if time stretch resulted in empty array
         if processed_audio.size == 0: 
             return np.array([])
 
@@ -765,7 +775,9 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
         if processed_segment.size == 0: return np.array([])
 
     # 3. Frammentazione e riassemblaggio iper-caotico
-    if processed_segment.size > sr * 0.5: # Applica solo se il segmento è abbastanza lungo
+    # Assicurati che il segmento sia abbastanza lungo per la frammentazione
+    min_segment_for_fragmentation = sr * 0.5 # Es. almeno 0.5 secondi
+    if processed_segment.size > min_segment_for_fragmentation: 
         min_frag_len = int(sr * 0.05) # Frammenti molto piccoli
         max_frag_len = int(sr * 0.5)  # Frammenti di media dimensione
         
@@ -774,12 +786,13 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
         max_fragments_to_cut = 50 # Limite per performance
 
         while current_pos < processed_segment.size and len(fragments) < max_fragments_to_cut:
+            # Assicurati che frag_len non superi la dimensione rimanente
             frag_len = random.randint(min_frag_len, max_frag_len)
             if current_pos + frag_len > processed_segment.size:
                 frag_len = processed_segment.size - current_pos
             
             if frag_len <= 0:
-                break
+                break # Nessun frammento valido rimanente
             
             fragment = processed_segment[current_pos : current_pos + frag_len].copy()
 
@@ -792,7 +805,8 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
                 if random.random() < 0.2: # Time stretch leggero su alcuni frammenti
                     fragment = safe_time_stretch(fragment, random.uniform(0.8, 1.2))
                 
-                fragments.append(fragment)
+                if fragment.size > 0: # Aggiungi solo frammenti validi
+                    fragments.append(fragment)
             
             current_pos += frag_len + int(sr * random.uniform(0.01, 0.1)) # Piccole pause/salti
 
@@ -800,8 +814,8 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
             random.shuffle(fragments) # Riassemblaggio completamente casuale
             processed_segment = np.concatenate(fragments)
         else:
-            # Se la frammentazione ha fallito, usa il segmento originale manipolato
-            processed_segment = audio_segment.copy()
+            # Se la frammentazione non ha prodotto frammenti validi, non modificare il segmento da questo passaggio
+            pass 
             
     # 4. Aggiunta di rumore impulsivo/glitch
     if processed_segment.size > 0 and random.random() < 0.7:
@@ -820,6 +834,8 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
         max_val = np.max(np.abs(processed_segment))
         if max_val > 0:
             processed_segment = processed_segment / max_val * 0.9 # Normalizza un po' più basso per evitare clipping nel loop
+        else: # Se max_val è 0 (audio silenzioso), assicurati che non sia NaN o Inf
+            processed_segment = np.zeros_like(processed_segment)
 
     return processed_segment
 
@@ -832,18 +848,19 @@ def create_loop(original_audio, sr, loop_duration_sec, num_repetitions=3):
         return np.array([])
 
     # 1. Seleziona il segmento dall'audio ORIGINALE
+    # Assicurati che loop_duration_sec non superi la lunghezza effettiva dell'audio
     actual_loop_duration_sec = min(loop_duration_sec, len(original_audio)/sr) 
     start_sample = 0
     end_sample = int(actual_loop_duration_sec * sr)
 
-    if end_sample <= start_sample: 
-        st.error(f"❌ Audio originale troppo breve ({len(original_audio)/sr:.2f}s) per creare un loop di {actual_loop_duration_sec:.2f}s.")
+    if end_sample <= start_sample + 100: # Aggiunto un piccolo buffer per evitare segmenti quasi vuoti
+        st.error(f"❌ Audio originale troppo breve ({len(original_audio)/sr:.2f}s) per creare un loop di {actual_loop_duration_sec:.2f}s significativo.")
         return np.array([])
     
     segment_to_decompose = original_audio[start_sample:end_sample].copy()
     
     if segment_to_decompose.size == 0:
-        st.error("❌ Il segmento selezionato per il loop è vuoto.")
+        st.error("❌ Il segmento selezionato per il loop è vuoto dopo il taglio iniziale.")
         return np.array([])
 
     # 2. Applica la decomposizione "molto decomposto" al segmento
@@ -851,10 +868,14 @@ def create_loop(original_audio, sr, loop_duration_sec, num_repetitions=3):
     decomposed_loop_segment = apply_heavy_loop_decomposition(segment_to_decompose, sr)
     
     if decomposed_loop_segment.size == 0:
-        st.error("❌ La decomposizione del segmento di loop ha prodotto un audio vuoto.")
+        st.error("❌ La decomposizione del segmento di loop ha prodotto un audio vuoto o non riproducibile. Prova con una durata del loop diversa o un brano originale più lungo.")
         return np.array([])
 
     # 3. Ripeti il segmento decomposto
+    # Assicurati che decomposed_loop_segment non sia vuoto prima di np.tile
+    if decomposed_loop_segment.size == 0:
+        return np.array([])
+        
     looped_audio = np.tile(decomposed_loop_segment, num_repetitions)
 
     st.success(f"✅ Loop generato! Segmento di {actual_loop_duration_sec:.2f} secondi (dall'originale e decomposto in modo casuale), ripetuto {num_repetitions} volte. Durata totale loop: {len(looped_audio)/sr:.2f} secondi.")
@@ -868,6 +889,7 @@ if uploaded_file is not None:
     st.sidebar.markdown(f"**Sample Rate fisso per l'elaborazione:** `{target_sr} Hz` (Qualità Radio)")
     st.sidebar.info("Questa impostazione massimizza la compatibilità e l'efficienza per file audio più lunghi.")
 
+    tmp_file_path = None # Inizializza per garantire che sia definito anche in caso di errore
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
             tmp_file.write(uploaded_file.read())
@@ -977,7 +999,6 @@ if uploaded_file is not None:
                     st.audio(processed_tmp_path_for_playback, format='audio/wav', sample_rate=sr) # Aggiunto sample_rate
                     os.unlink(processed_tmp_path_for_playback) # Elimina il file temporaneo dopo la riproduzione
                     
-                    # st.experimental_rerun() # Rimosso questo comando problematico
         
         # === SEZIONE LOOP (mostrata solo se original_audio esiste) ===
         if 'original_audio' in st.session_state and st.session_state['original_audio'].size > 0:
@@ -1197,7 +1218,7 @@ if uploaded_file is not None:
                 
         # Pulisci il file temporaneo dell'audio caricato all'inizio
         try:
-            if os.path.exists(tmp_file_path):
+            if tmp_file_path and os.path.exists(tmp_file_path):
                 os.unlink(tmp_file_path)
         except Exception as e:
             st.error(f"Errore durante la pulizia del file originale: {e}")
@@ -1205,7 +1226,7 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"❌ Errore nel processamento principale: {str(e)}")
         st.error(f"Dettagli: {traceback.format_exc()}")
-        if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
+        if 'tmp_file_path' in locals() and tmp_file_path and os.path.exists(tmp_file_path):
             os.unlink(tmp_file_path)
 
 
@@ -1228,20 +1249,20 @@ else:
             * **Clicca "Genera Loop Decomposto"**. Il segmento verrà manipolato in modo caotico e poi ripetuto.
 
         ### Metodi disponibili (Massima Elaborazione):
-        - **🎭 Cut-up Sonoro**: Collage sonoro con frammenti riassemblati in modo intenso.
-        - **🔄 Remix Destrutturato**: Remix creativo che spinge i limiti della riorganizzazione.  
-        - **🎵 Musique Concrète**: Manipolazione granulare profonda per texture astratte complesse.
-        - **🏛️ Decostruzione Postmoderna**: Approccio critico radicale con ironia e rotture marcate.
-        - **🎨 Decomposizione Creativa**: Focus su discontinuità estreme e shift emotivi pronunciati.
-        - **🌪️ Random Chaos**: Trasformazioni altamente imprevedibili e massimali.
+        -   **🎭 Cut-up Sonoro**: Collage sonoro con frammenti riassemblati in modo intenso.
+        -   **🔄 Remix Destrutturato**: Remix creativo che spinge i limiti della riorganizzazione.  
+        -   **🎵 Musique Concrète**: Manipolazione granulare profonda per texture astratte complesse.
+        -   **🏛️ Decostruzione Postmoderna**: Approccio critico radicale con ironia e rotture marcate.
+        -   **🎨 Decomposizione Creativa**: Focus su discontinuità estreme e shift emotivi pronunciati.
+        -   **🌪️ Random Chaos**: Trasformazioni altamente imprevedibili e massimali.
         
         ### Loop Decomposto:
-        - Una nuova funzionalità che applica un insieme di trasformazioni casuali e aggressive (pitch shift, time stretch, inversione, frammentazione, rumore) a un piccolo segmento del tuo audio originale, poi lo ripete per creare un loop molto caotico e imprevedibile, perfetto per ambientazioni estreme o glitch sonori.
+        -   Una nuova funzionalità che applica un insieme di trasformazioni casuali e aggressive (pitch shift, time stretch, inversione, frammentazione, rumore) a un piccolo segmento del tuo audio originale, poi lo ripete per creare un loop molto caotico e imprevedibile, perfetto per ambientazioni estreme o glitch sonori.
 
         ### Ottimizzazioni:
-        - ⚡ Tutti i metodi sono ora ottimizzati per file fino a 5 minuti con elaborazione approfondita.
-        - 🎛️ Parametri preimpostati per garantire la massima intensità per ogni stile.
-        - 🚀 Performance bilanciate per un'esperienza d'uso stabile.
+        -   ⚡ Tutti i metodi sono ora ottimizzati per file fino a 5 minuti con elaborazione approfondita.
+        -   🎛️ Parametri preimpostati per garantire la massima intensità per ogni stile.
+        -   🚀 Performance bilanciate per un'esperienza d'uso stabile.
         """)
 
 # Footer
