@@ -11,7 +11,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import io
-import traceback # Importa per i dettagli degli errori
+import traceback
 
 # Configurazione pagina
 st.set_page_config(
@@ -344,15 +344,15 @@ def remix_destrutturato(audio, sr, params):
         return audio
 
     # Limita il numero di tagli
-    max_cuts = min(30, len(audio) // fragment_samples)
+    max_cuts = min(30, len(audio) / fragment_samples) # Cambiato in divisione
     
     cut_points = []
     if beat_preservation > 0.5 and beats.size > 0:
         beat_times = librosa.frames_to_time(beats, sr=sr)
-        cut_points = [int(t * sr) for t in beat_times[:max_cuts] if t * sr < len(audio)]
+        cut_points = [int(t * sr) for t in beat_times[:int(max_cuts)] if t * sr < len(audio)] # Aggiunto int() per max_cuts
 
     if len(cut_points) == 0 or beat_preservation <= 0.5:
-        num_cuts = min(max_cuts, int(len(audio) / fragment_samples))
+        num_cuts = min(int(max_cuts), int(len(audio) / fragment_samples))
         if num_cuts > 0 and len(audio) > 0:
             cut_points = sorted(random.sample(range(0, len(audio), fragment_samples), min(num_cuts, len(range(0, len(audio), fragment_samples)))))
 
@@ -555,8 +555,15 @@ def decostruzione_postmoderna(audio, sr, params):
         if fragment.size > 0:
             # Calcola energia semplice
             energy = np.sqrt(np.mean(fragment**2))
-            fragment_type = 'important' if energy > np.mean([np.sqrt(np.mean(audio[j:j+fragment_samples]**2)) 
-                                                            for j in range(0, len(audio)-fragment_samples+1, len(audio)//10)]) else 'random'
+            # Utilizza una media per la soglia basata su un piccolo campione dell'audio per evitare errori con audio vuoto
+            if len(audio) > fragment_samples * 10: # Assicurati che ci sia abbastanza audio per il campione
+                sample_energies = [np.sqrt(np.mean(audio[j:j+fragment_samples]**2)) 
+                                   for j in range(0, len(audio) - fragment_samples + 1, len(audio) // 10)]
+                mean_sample_energy = np.mean(sample_energies) if sample_energies else 0
+            else:
+                mean_sample_energy = 0 # Nessuna media se l'audio è troppo corto
+            
+            fragment_type = 'important' if energy > mean_sample_energy else 'random'
             
             fragments.append(fragment)
             fragment_types.append(fragment_type)
@@ -792,16 +799,36 @@ def random_chaos(audio, sr, params):
             processed_audio = processed_audio / max_val * 0.95
     
     return processed_audio
+
 # Logica principale per processare l'audio
 if uploaded_file is not None:
+    # Aggiungi un selettore per il sample rate target nella sidebar o in una colonna
+    st.sidebar.subheader("⚙️ Impostazioni Caricamento Audio")
+    target_sr_options = {
+        "Auto (Originale)": None,
+        "44100 Hz (CD Quality)": 44100,
+        "22050 Hz (Radio Quality)": 22050,
+        "16000 Hz (Voice Quality)": 16000,
+        "8000 Hz (Telephone Quality)": 8000
+    }
+    
+    selected_target_sr_label = st.sidebar.selectbox(
+        "Seleziona il Sample Rate per l'elaborazione:",
+        list(target_sr_options.keys()),
+        index=2, # Preseleziona 22050 Hz come default più leggero
+        help="Un sample rate più basso riduce il consumo di memoria e CPU, ma può ridurre la qualità audio."
+    )
+    
+    target_sr = target_sr_options[selected_target_sr_label]
+
     try:
         # Carica il file audio
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
             tmp_file.write(uploaded_file.read())
             tmp_file_path = tmp_file.name
 
-        # Leggi l'audio con limitazione per file molto lunghi
-        audio, sr = librosa.load(tmp_file_path, sr=None, duration=300)  # Massimo 5 minuti
+        # Leggi l'audio con limitazione per file molto lunghi e con target_sr
+        audio, sr = librosa.load(tmp_file_path, sr=target_sr, duration=300)  # Massimo 5 minuti
         
         # Mostra informazioni del file originale
         col1, col2, col3 = st.columns(3)
@@ -1009,7 +1036,8 @@ if uploaded_file is not None:
                             st.markdown("### Riepilogo dei Cambiamenti Quantitativi:")
 
                             analysis_text = f"""
-                            * **Durata:** L'audio originale di **{original_duration:.2f} secondi** è stato trasformato in **{new_duration:.2f} secondi** ({'allungamento' if new_duration > original_duration else 'accorciamento'} di **{abs(new_duration - original_duration):.2f} secondi**).
+                            * **Durata:** L'audio originale di **{uploaded_file.size / (sr * 2):.2f} secondi** è stato trasformato in **{new_duration:.2f} secondi** ({'allungamento' if new_duration > (uploaded_file.size / (sr * 2)) else 'accorciamento'} di **{abs(new_duration - (uploaded_file.size / (sr * 2))):.2f} secondi**).
+                            * **Sample Rate Elaborazione:** Il brano è stato elaborato a **{sr} Hz**. Un sample rate più basso riduce il consumo di memoria e CPU.
                             * **Energia RMS:** Variazione di **{processed_rms - original_rms:.4f}** - il suono risultante è {'più forte' if processed_rms > original_rms else 'più debole' if processed_rms < original_rms else 'simile'} in volume medio.
                             * **Variazione Spettrale:** **{spectral_diff:.2e}** - quantifica il cambiamento del "colore" e distribuzione delle frequenze rispetto all'originale.
                             
@@ -1050,15 +1078,18 @@ if uploaded_file is not None:
                             with st.expander("📊 Confronto Forme d'Onda"):
                                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
                                 
-                                time_orig = np.linspace(0, len(audio)/sr, len(audio))
-                                ax1.plot(time_orig, audio, color='blue', alpha=0.7)
+                                # Assicurati che audio non sia vuoto prima di plottare
+                                if audio.size > 0:
+                                    time_orig = np.linspace(0, len(audio)/sr, len(audio))
+                                    ax1.plot(time_orig, audio, color='blue', alpha=0.7)
                                 ax1.set_title("Forma d'Onda Originale")
                                 ax1.set_xlabel("Tempo (sec)")
                                 ax1.set_ylabel("Ampiezza")
                                 ax1.grid(True, alpha=0.3)
                                 
-                                time_proc = np.linspace(0, len(processed_audio)/sr, len(processed_audio))
-                                ax2.plot(time_proc, processed_audio, color='red', alpha=0.7)
+                                if processed_audio.size > 0:
+                                    time_proc = np.linspace(0, len(processed_audio)/sr, len(processed_audio))
+                                    ax2.plot(time_proc, processed_audio, color='red', alpha=0.7)
                                 ax2.set_title(f"Forma d'Onda Decomposta ({method_labels[selected_method]} - {st.session_state.intensity.upper()})")
                                 ax2.set_xlabel("Tempo (sec)")
                                 ax2.set_ylabel("Ampiezza")
@@ -1070,17 +1101,24 @@ if uploaded_file is not None:
                             with st.expander("🎼 Analisi Spettrale"):
                                 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
                                 
-                                D_orig = librosa.amplitude_to_db(np.abs(librosa.stft(audio)), ref=np.max)
-                                librosa.display.specshow(D_orig, y_axis='hz', x_axis='time', sr=sr, ax=ax1)
-                                ax1.set_title("Spettrogramma Originale")
-                                ax1.set_xlabel("Tempo (sec)")
-                                ax1.set_ylabel("Frequenza (Hz)")
+                                # Aggiungi controlli per evitare errori su audio vuoto o troppo corto per STFT
+                                if audio.size > sr * 2: # Richiede almeno 2 secondi di audio per una STFT significativa
+                                    D_orig = librosa.amplitude_to_db(np.abs(librosa.stft(audio)), ref=np.max)
+                                    librosa.display.specshow(D_orig, y_axis='hz', x_axis='time', sr=sr, ax=ax1)
+                                    ax1.set_title("Spettrogramma Originale")
+                                    ax1.set_xlabel("Tempo (sec)")
+                                    ax1.set_ylabel("Frequenza (Hz)")
+                                else:
+                                    ax1.set_title("Spettrogramma Originale (Audio troppo corto per analisi)")
                                 
-                                D_proc = librosa.amplitude_to_db(np.abs(librosa.stft(processed_audio)), ref=np.max)
-                                librosa.display.specshow(D_proc, y_axis='hz', x_axis='time', sr=sr, ax=ax2)
-                                ax2.set_title("Spettrogramma Decomposto")
-                                ax2.set_xlabel("Tempo (sec)")
-                                ax2.set_ylabel("Frequenza (Hz)")
+                                if processed_audio.size > sr * 2:
+                                    D_proc = librosa.amplitude_to_db(np.abs(librosa.stft(processed_audio)), ref=np.max)
+                                    librosa.display.specshow(D_proc, y_axis='hz', x_axis='time', sr=sr, ax=ax2)
+                                    ax2.set_title("Spettrogramma Decomposto")
+                                    ax2.set_xlabel("Tempo (sec)")
+                                    ax2.set_ylabel("Frequenza (Hz)")
+                                else:
+                                    ax2.set_title("Spettrogramma Decomposto (Audio troppo corto per analisi)")
                                 
                                 plt.tight_layout()
                                 st.pyplot(fig)
@@ -1110,13 +1148,15 @@ else:
         st.markdown("""
         ### Modalità di utilizzo semplificata:
 
-        1. **Carica il tuo file audio** (MP3, WAV, M4A, FLAC, OGG)
-        2. **Scegli l'intensità:**
-           - 🟢 **SOFT**: Trasformazioni delicate, conserva molto dell'originale
-           - 🟡 **MEDIO**: Trasformazioni bilanciate, mix di conservazione e creatività  
-           - 🔴 **HARD**: Trasformazioni intense, risultati più estremi e sperimentali
-        3. **Seleziona il metodo di decomposizione**
-        4. **Clicca "SCOMPONI E RICOMPONI"**
+        1.  **Carica il tuo file audio** (MP3, WAV, M4A, FLAC, OGG)
+        2.  **Imposta il Sample Rate per l'elaborazione** (nella sidebar a sinistra):
+            * Un sample rate più basso (es. 22050 Hz o 16000 Hz) ridurrà notevolmente il consumo di risorse.
+        3.  **Scegli l'intensità:**
+            * 🟢 **SOFT**: Trasformazioni delicate, conserva molto dell'originale
+            * 🟡 **MEDIO**: Trasformazioni bilanciate, mix di conservazione e creatività  
+            * 🔴 **HARD**: Trasformazioni intense, risultati più estremi e sperimentali
+        4.  **Seleziona il metodo di decomposizione**
+        5.  **Clicca "SCOMPONI E RICOMPONI"**
 
         ### Metodi disponibili:
         - **🎭 Cut-up Sonoro**: Collage sonoro con frammenti riassemblati
