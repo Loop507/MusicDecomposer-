@@ -14,7 +14,7 @@ import io
 import traceback
 
 # Configurazione pagina
-st.set_page_page_config(
+st.set_page_config( # Correzione qui: rimosso un "page" in eccesso
     page_title="MusicDecomposer by loop507",
     layout="wide",
     initial_sidebar_state="expanded"
