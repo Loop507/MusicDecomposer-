@@ -973,31 +973,33 @@ if uploaded_file is not None:
                                 """
                             }
                             
-                            # Sintesi Artistica
+                            # Sintesi Artistica Dinamica
                             st.subheader("Sintesi Artistica della Decomposizione")
                             
-                            artistic_summaries = {
-                                "cut_up_sonoro": f"""
+                            if selected_method == "cut_up_sonoro":
+                                st.markdown(f"""
                                 Con il metodo del **"Cut-up Sonoro"** applicato con intensità **{st.session_state.intensity.upper()}**, il brano originale è stato smembrato e ricombinato in un collage sonoro decostruito. Frammenti di {params['fragment_size']:.1f} secondi sono stati riorganizzati con casualità {params['cut_randomness']:.1f} e stile '{params['reassembly_style']}', creando **inaspettate giustapposizioni** che sfidano la percezione tradizionale.
-                                """,
-                                "remix_destrutturato": f"""
+                                """)
+                            elif selected_method == "remix_destrutturato":
+                                st.markdown(f"""
                                 Attraverso il **"Remix Destrutturato"** con intensità **{st.session_state.intensity.upper()}**, l'essenza del brano è stata catturata e rielaborata. Con conservazione del battito al {params['beat_preservation']*100:.0f}% e frammentazione melodica {params['melody_fragmentation']:.1f}, gli elementi sonori sono stati **ricollocati in un paesaggio acustico reinventato** che è familiare ed estraneo insieme.
-                                """,
-                                "musique_concrete": f"""
+                                """)
+                            elif selected_method == "musique_concrete":
+                                st.markdown(f"""
                                 Con la **"Musique Concrète"** in modalità **{st.session_state.intensity.upper()}**, il brano è stato ridotto a grani sonori di {params['grain_size']:.2f} secondi, manipolati e ricombinati con densità {params['texture_density']:.1f}. Il risultato è un'**opera sonora astratta** che esplora le qualità timbriche intrinseche oltre l'organizzazione musicale originale.
-                                """,
-                                "decostruzione_postmoderna": f"""
+                                """)
+                            elif selected_method == "decostruzione_postmoderna":
+                                st.markdown(f"""
                                 La **"Decostruzione Postmoderna"** in versione **{st.session_state.intensity.upper()}** ha applicato un filtro concettuale con ironia {params['irony_level']:.1f} e shift di contesto {params['context_shift']:.1f}. Elementi riconoscibili sono stati trattati in modo inaspettato, provocando una **riflessione critica sull'opera** e trasformando il familiare in qualcosa di destabilizzante ma affascinante.
-                                """,
-                                "decomposizione_creativa": f"""
+                                """)
+                            elif selected_method == "decomposizione_creativa":
+                                st.markdown(f"""
                                 La **"Decomposizione Creativa"** con intensità **{st.session_state.intensity.upper()}** ha frammentato il brano sui punti di attacco, generando discontinuità {params['discontinuity']:.1f} e shift emotivi {params['emotional_shift']:.1f}. Il risultato è un'esperienza sonora **ricca di colpi di scena** e improvvisi cambi di umore emotivo.
-                                """,
-                                "random_chaos": f"""
+                                """)
+                            elif selected_method == "random_chaos":
+                                st.markdown(f"""
                                 Il **"Random Chaos"** in modalità **{st.session_state.intensity.upper()}** ha spinto il brano nei suoi limiti estremi con chaos level {params['chaos_level']:.1f}. **Trasformazioni radicali e casuali** hanno creato un'esplorazione sonora che sfugge a qualsiasi classificazione, un viaggio in un paesaggio acustico alieno dove l'originale è appena un eco lontano.
-                                """
-                            }
-                            
-                            st.markdown(artistic_summaries[selected_method])
+                                """)
 
                             st.markdown("---")
                             st.markdown("**Descrizione della Tecnica Applicata:**")
@@ -1012,11 +1014,37 @@ if uploaded_file is not None:
                             * **Variazione Spettrale:** **{spectral_diff:.2e}** - quantifica il cambiamento del "colore" e distribuzione delle frequenze rispetto all'originale.
                             
                             **Parametri Applicati** (Intensità {st.session_state.intensity.upper()}):
-                            * Dimensione Frammenti: {params['fragment_size']}s
-                            * Livello Chaos: {params['chaos_level']}
-                            * Conservazione Struttura: {params['structure_preservation']}
                             """
                             st.markdown(analysis_text)
+                            # Stampa i parametri specifici del metodo
+                            for param_name, param_value in params.items():
+                                if param_name == 'fragment_size':
+                                    st.markdown(f"* Dimensione Frammenti: {param_value}s")
+                                elif param_name == 'chaos_level':
+                                    st.markdown(f"* Livello Chaos: {param_value}")
+                                elif param_name == 'structure_preservation':
+                                    st.markdown(f"* Conservazione Struttura: {param_value}")
+                                elif param_name == 'cut_randomness':
+                                    st.markdown(f"* Casualità Tagli: {param_value}")
+                                elif param_name == 'reassembly_style':
+                                    st.markdown(f"* Stile Riassemblaggio: {param_value}")
+                                elif param_name == 'beat_preservation':
+                                    st.markdown(f"* Conservazione Battito: {param_value*100:.0f}%")
+                                elif param_name == 'melody_fragmentation':
+                                    st.markdown(f"* Frammentazione Melodica: {param_value}")
+                                elif param_name == 'grain_size':
+                                    st.markdown(f"* Dimensione Grana: {param_value}s")
+                                elif param_name == 'texture_density':
+                                    st.markdown(f"* Densità Texture: {param_value}")
+                                elif param_name == 'irony_level':
+                                    st.markdown(f"* Livello Ironia: {param_value}")
+                                elif param_name == 'context_shift':
+                                    st.markdown(f"* Spostamento Contesto: {param_value}")
+                                elif param_name == 'discontinuity':
+                                    st.markdown(f"* Discontinuità: {param_value}")
+                                elif param_name == 'emotional_shift':
+                                    st.markdown(f"* Shift Emotivo: {param_value}")
+
 
                             # Visualizzazioni
                             with st.expander("📊 Confronto Forme d'Onda"):
