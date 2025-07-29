@@ -941,6 +941,7 @@ if uploaded_file is not None:
                     st.error("❌ Elaborazione fallita - audio risultante vuoto. Prova un metodo diverso o un file audio differente.")
                 else:
                     st.session_state['processed_audio_main'] = processed_audio # Rinominato per chiarezza
+                    st.session_state['current_download_type'] = 'main_decomposed' # Imposta tipo download
                     
                     st.success("✅ Decomposizione completata!")
                     
@@ -973,10 +974,10 @@ if uploaded_file is not None:
                         sf.write(tmp_file_playback.name, processed_audio, sr)
                         processed_tmp_path_for_playback = tmp_file_playback.name
                     
-                    st.audio(processed_tmp_path_for_playback, format='audio/wav')
+                    st.audio(processed_tmp_path_for_playback, format='audio/wav', sample_rate=sr) # Aggiunto sample_rate
                     os.unlink(processed_tmp_path_for_playback) # Elimina il file temporaneo dopo la riproduzione
                     
-                    st.experimental_rerun() # Ricarica per mostrare la sezione loop
+                    # st.experimental_rerun() # Rimosso questo comando problematico
         
         # === SEZIONE LOOP (mostrata solo se original_audio esiste) ===
         if 'original_audio' in st.session_state and st.session_state['original_audio'].size > 0:
@@ -1002,7 +1003,7 @@ if uploaded_file is not None:
                     looped_result = create_loop(original_audio, sr, loop_duration_option, num_repetitions)
                     if looped_result.size > 0:
                         st.success("Loop decomposto generato con successo!")
-                        st.audio(looped_result, format='audio/wav')
+                        st.audio(looped_result, format='audio/wav', sample_rate=sr) # Aggiunto sample_rate
                         st.session_state['current_download_audio'] = looped_result # Salva per il download
                         st.session_state['current_download_type'] = 'loop'
                     else:
