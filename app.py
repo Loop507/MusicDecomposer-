@@ -14,7 +14,7 @@ import io
 import traceback
 
 # Configurazione pagina
-st.set_page_config( # Correzione qui: rimosso un "page" in eccesso
+st.set_page_config( 
     page_title="MusicDecomposer by loop507",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -826,8 +826,12 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
                 impulse_pos = random.randint(0, processed_segment.size - 1)
                 impulse_len = int(sr * random.uniform(0.001, 0.01))
                 end_impulse = min(processed_segment.size, impulse_pos + impulse_len)
+                
+                # Assicurati che il segmento per il rumore sia valido
                 if end_impulse > impulse_pos:
-                    processed_segment[impulse_pos:end_impulse] += np.random.normal(0, random.uniform(0.1, 0.3), end_impulse - impulse_len) # Fixed len
+                    # CORREZIONE QUI: la dimensione del rumore deve essere (end_impulse - impulse_pos)
+                    noise_segment_size = end_impulse - impulse_pos 
+                    processed_segment[impulse_pos:end_impulse] += np.random.normal(0, random.uniform(0.1, 0.3), noise_segment_size)
 
     # 5. Normalizzazione finale
     if processed_segment.size > 0:
