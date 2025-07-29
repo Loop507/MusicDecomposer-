@@ -14,7 +14,7 @@ import io
 import traceback
 
 # Configurazione pagina
-st.set_page_config(
+st.set_page_page_config(
     page_title="MusicDecomposer by loop507",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -138,7 +138,8 @@ def safe_pitch_shift(audio, sr, n_steps):
         n_steps = np.clip(n_steps, -12, 12)
         hop_length = 512 if len(audio) < sr * 30 else 1024
         
-        result = librosa.effects.pitch_shift(audio, sr=sr, n_length=len(audio), n_steps=n_steps, hop_length=hop_length) # Aggiunto n_length
+        # Rimosso n_length=len(audio) come richiesto per risolvere l'errore
+        result = librosa.effects.pitch_shift(audio, sr=sr, n_steps=n_steps, hop_length=hop_length)
         return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
     except Exception as e:
         st.warning(f"Pitch shift fallito: {e}")
@@ -826,7 +827,7 @@ def apply_heavy_loop_decomposition(audio_segment, sr):
                 impulse_len = int(sr * random.uniform(0.001, 0.01))
                 end_impulse = min(processed_segment.size, impulse_pos + impulse_len)
                 if end_impulse > impulse_pos:
-                    processed_segment[impulse_pos:end_impulse] += np.random.normal(0, random.uniform(0.1, 0.3), end_impulse - impulse_pos)
+                    processed_segment[impulse_pos:end_impulse] += np.random.normal(0, random.uniform(0.1, 0.3), end_impulse - impulse_len) # Fixed len
 
     # 5. Normalizzazione finale
     if processed_segment.size > 0:
@@ -847,48 +848,50 @@ def create_loop(original_audio, sr, loop_duration_sec, num_repetitions=3):
         st.error("❌ Impossibile creare il loop: l'audio originale è vuoto.")
         return np.array([])
 
-    # 1. Seleziona il segmento dall'audio ORIGINALE
-    # Assicurati che loop_duration_sec non superi la lunghezza effettiva dell'audio
-    actual_loop_duration_sec = min(loop_duration_sec, len(original_audio)/sr) 
-    start_sample = 0
-    end_sample = int(actual_loop_duration_sec * sr)
+    loop_segment_length_samples = int(loop_duration_sec * sr)
 
-    if end_sample <= start_sample + 100: # Aggiunto un piccolo buffer per evitare segmenti quasi vuoti
-        st.error(f"❌ Audio originale troppo breve ({len(original_audio)/sr:.2f}s) per creare un loop di {actual_loop_duration_sec:.2f}s significativo.")
+    if loop_segment_length_samples <= 0:
+        st.error("❌ Durata del loop non valida.")
+        return np.array([])
+
+    if len(original_audio) < loop_segment_length_samples:
+        st.error(f"❌ Audio originale troppo breve ({len(original_audio)/sr:.2f}s) per creare un loop di {loop_duration_sec:.2f}s.")
         return np.array([])
     
-    segment_to_decompose = original_audio[start_sample:end_sample].copy()
+    # Seleziona il segmento iniziale dall'audio ORIGINALE della durata esatta desiderata
+    segment_to_decompose = original_audio[:loop_segment_length_samples].copy()
     
     if segment_to_decompose.size == 0:
         st.error("❌ Il segmento selezionato per il loop è vuoto dopo il taglio iniziale.")
         return np.array([])
 
     # 2. Applica la decomposizione "molto decomposto" al segmento
-    st.info(f"🌀 Applicando una decomposizione 'random chaos' al segmento di {actual_loop_duration_sec:.2f} secondi...")
+    st.info(f"🌀 Applicando una decomposizione 'random chaos' al segmento di {loop_duration_sec:.2f} secondi...")
     decomposed_loop_segment = apply_heavy_loop_decomposition(segment_to_decompose, sr)
     
     if decomposed_loop_segment.size == 0:
         st.error("❌ La decomposizione del segmento di loop ha prodotto un audio vuoto o non riproducibile. Prova con una durata del loop diversa o un brano originale più lungo.")
         return np.array([])
 
-    # 3. Ripeti il segmento decomposto
-    # Assicurati che decomposed_loop_segment non sia vuoto prima di np.tile
-    if decomposed_loop_segment.size == 0:
-        return np.array([])
-        
+    # 3. Assicurati che il segmento decomposto abbia la lunghezza esatta del loop desiderato
+    if len(decomposed_loop_segment) > loop_segment_length_samples:
+        decomposed_loop_segment = decomposed_loop_segment[:loop_segment_length_samples]
+    elif len(decomposed_loop_segment) < loop_segment_length_samples:
+        padding = np.zeros(loop_segment_length_samples - len(decomposed_loop_segment))
+        decomposed_loop_segment = np.concatenate((decomposed_loop_segment, padding))
+
+    # 4. Ripeti il segmento decomposto
     looped_audio = np.tile(decomposed_loop_segment, num_repetitions)
 
-    st.success(f"✅ Loop generato! Segmento di {actual_loop_duration_sec:.2f} secondi (dall'originale e decomposto in modo casuale), ripetuto {num_repetitions} volte. Durata totale loop: {len(looped_audio)/sr:.2f} secondi.")
+    st.success(f"✅ Loop generato! Segmento di {loop_duration_sec:.2f} secondi (dall'originale e decomposto in modo casuale), ripetuto {num_repetitions} volte. Durata totale loop: {len(looped_audio)/sr:.2f} secondi.")
     return looped_audio
 
 
 # Logica principale per processare l'audio
 if uploaded_file is not None:
     target_sr = 22050
-    st.sidebar.subheader("⚙️ Impostazioni Caricamento Audio")
-    st.sidebar.markdown(f"**Sample Rate fisso per l'elaborazione:** `{target_sr} Hz` (Qualità Radio)")
-    st.sidebar.info("Questa impostazione massimizza la compatibilità e l'efficienza per file audio più lunghi.")
-
+    # Rimossa la sezione "⚙️ Impostazioni Caricamento Audio" dalla sidebar
+    
     tmp_file_path = None # Inizializza per garantire che sia definito anche in caso di errore
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
@@ -910,6 +913,7 @@ if uploaded_file is not None:
             st.metric("Canali", "Mono")
 
         st.subheader("Audio Originale (Caricato)")
+        # Rimosso sample_rate=sr
         st.audio(uploaded_file, format='audio/wav')
 
         st.markdown("---")
@@ -996,7 +1000,8 @@ if uploaded_file is not None:
                         sf.write(tmp_file_playback.name, processed_audio, sr)
                         processed_tmp_path_for_playback = tmp_file_playback.name
                     
-                    st.audio(processed_tmp_path_for_playback, format='audio/wav', sample_rate=sr) # Aggiunto sample_rate
+                    # Rimosso sample_rate=sr
+                    st.audio(processed_tmp_path_for_playback, format='audio/wav') 
                     os.unlink(processed_tmp_path_for_playback) # Elimina il file temporaneo dopo la riproduzione
                     
         
@@ -1005,32 +1010,34 @@ if uploaded_file is not None:
             original_audio = st.session_state['original_audio']
             sr = st.session_state['sr']
             
-            st.markdown("---")
-            st.subheader("🔁 Crea un Loop Decomposto dall'Audio Originale")
-            st.info("Questo loop sarà generato con una decomposizione caotica e imprevedibile, direttamente dal tuo brano originale.")
+            # Spostato tutta la sezione loop nella sidebar
+            with st.sidebar:
+                st.markdown("---")
+                st.subheader("🔁 Crea un Loop Decomposto dall'Audio Originale")
+                st.info("Questo loop sarà generato con una decomposizione caotica e imprevedibile, direttamente dal tuo brano originale.")
 
-            loop_duration_option = st.radio(
-                "Durata del segmento per il Loop:",
-                (2.0, 4.0, 8.0, 15.0), # Opzioni in secondi
-                format_func=lambda x: f"{x:.1f} secondi",
-                key="loop_duration_radio"
-            )
-            num_repetitions = st.slider("Numero di ripetizioni del loop", 1, 10, 3, key="num_repetitions_slider_loop")
+                loop_duration_option = st.radio(
+                    "Durata del segmento per il Loop:",
+                    (2.0, 4.0, 8.0, 15.0), # Opzioni in secondi
+                    format_func=lambda x: f"{x:.1f} secondi",
+                    key="loop_duration_radio"
+                )
+                num_repetitions = st.slider("Numero di ripetizioni del loop", 1, 10, 3, key="num_repetitions_slider_loop")
 
-            looped_result = np.array([]) # Inizializza qui
+                looped_result = np.array([]) # Inizializza qui
+                
+                if st.button(f"🌀 Genera Loop Decomposto di {loop_duration_option:.1f} secondi", use_container_width=True, key="generate_loop_button"):
+                    with st.spinner(f"Generando loop decomposto di {loop_duration_option:.1f} secondi dal brano originale..."):
+                        looped_result = create_loop(original_audio, sr, loop_duration_option, num_repetitions)
+                        if looped_result.size > 0:
+                            st.success("Loop decomposto generato con successo!")
+                            st.audio(looped_result, format='audio/wav', sample_rate=sr) # Qui sample_rate è ok perché è un numpy array
+                            st.session_state['current_download_audio'] = looped_result # Salva per il download
+                            st.session_state['current_download_type'] = 'loop'
+                        else:
+                            st.error("Impossibile generare il loop. Controlla i messaggi di avviso sopra.")
             
-            if st.button(f"🌀 Genera Loop Decomposto di {loop_duration_option:.1f} secondi", use_container_width=True, key="generate_loop_button"):
-                with st.spinner(f"Generando loop decomposto di {loop_duration_option:.1f} secondi dal brano originale..."):
-                    looped_result = create_loop(original_audio, sr, loop_duration_option, num_repetitions)
-                    if looped_result.size > 0:
-                        st.success("Loop decomposto generato con successo!")
-                        st.audio(looped_result, format='audio/wav', sample_rate=sr) # Aggiunto sample_rate
-                        st.session_state['current_download_audio'] = looped_result # Salva per il download
-                        st.session_state['current_download_type'] = 'loop'
-                    else:
-                        st.error("Impossibile generare il loop. Controlla i messaggi di avviso sopra.")
-            
-            # --- Sezione Download ---
+            # --- Sezione Download (rimane nella colonna principale, ma usa lo stato di sessione) ---
             final_audio_for_download = np.array([])
             filename = "decomposed_audio.wav"
 
@@ -1069,6 +1076,8 @@ if uploaded_file is not None:
                     sf.write(final_tmp_file.name, final_audio_for_download, sr)
                     final_download_path = final_tmp_file.name
 
+                st.markdown("---")
+                st.subheader("💾 Scarica il Tuo Audio Elaborato")
                 with open(final_download_path, 'rb') as audio_file:
                     audio_bytes = audio_file.read()
                     st.download_button(
@@ -1097,7 +1106,7 @@ if uploaded_file is not None:
                 else: # Mostra la descrizione del metodo principale
                     technique_descriptions = {
                         "cut_up_sonoro": """
-                        Il metodo **"Cut-up Sonoro"** si ispira a una tecnica letteraria dove il testo viene frammentato e riassemblato. Il brano viene diviso in sezioni, che vengono poi **tagliate e riassemblate in un ordine casuale o predefinito** (come inversione o palindromo). Questo crea un effetto di collage sonoro, dove il significato originale è destrutturato per rivelare nuove connessioni e pattern imprevedibili.
+                        Il metodo **"Cut-up Sonoro"** si inspira a una tecnica letteraria dove il testo viene frammentato e riassemblato. Il brano viene diviso in sezioni, che vengono poi **tagliate e riassemblate in un ordine casuale o predefinito** (come inversione o palindromo). Questo crea un effetto di collage sonoro, dove il significato originale è destrutturato per rivelare nuove connessioni e pattern imprevedibili.
                         """,
                         "remix_destrutturato": """
                         Il **"Remix Destrutturato"** mira a mantenere alcuni elementi riconoscibili del brano originale (come battiti o frammenti melodici), ma li **ricontestualizza in un nuovo arrangiamento**. Vengono applicate manipolazioni come pitch shift e time stretch ai frammenti, che poi vengono riorganizzati per creare un'esperienza d'ascolto familiare ma sorprendentemente nuova.
@@ -1242,7 +1251,7 @@ else:
         3.  **SCOMPONI E RICOMPONI**:
             * **Seleziona il metodo di decomposizione** che preferisci (es. "Cut-up Sonoro"). Tutti i metodi applicheranno la **massima elaborazione**.
             * **Clicca "SCOMPONI E RICOMPONI"** per generare l'arte sonora.
-        4.  **CREA LOOP DECOMPOSTO**:
+        4.  **CREA LOOP DECOMPOSTO** (ora nella sidebar):
             * Indipendentemente dalla decomposizione principale, puoi creare un **loop molto decomposto** direttamente da un segmento del tuo brano originale.
             * **Scegli la durata in secondi** del segmento che vuoi looppare (es. 2, 4, 8, 15 secondi).
             * **Scegli il numero di ripetizioni**.
