@@ -8,6 +8,7 @@ import os
 import random
 import re
 from scipy import signal
+from scipy.ndimage import uniform_filter1d
 import matplotlib.pyplot as plt
 import traceback
 
@@ -87,6 +88,31 @@ FIXED_PARAMS = {
         'fragment_size': 1.0,
         'chaos_level': 1.0,
         'structure_preservation': 0.1
+    },
+    'decomposizione_bande': {
+        'low_crossover': 200,
+        'high_crossover': 2000,
+        'low_stretch': 0.8,
+        'high_delay_sec': 0.14,
+        'high_delay_mix': 0.3
+    },
+    'separazione_hpss': {
+        'margin_harmonic': 1.0,
+        'margin_percussive': 5.0,
+        'harmonic_pitch_shift': 5,
+        'tremolo_hz': 6.0,
+        'percussive_rate': 2.0,
+        'harmonic_weight': 0.6,
+        'percussive_weight': 1.4
+    },
+    'modulazione_spettrale': {
+        'phase_mod_depth': 0.5,
+        'phase_mod_cycles': 20,
+        'magnitude_smooth_size': 5
+    },
+    'inviluppo_dinamico': {
+        'envelope_smooth_hz': 25,
+        'reorder': 'sustain_first'
     }
 }
 
@@ -820,6 +846,172 @@ def random_chaos(audio, sr, params):
     
     return processed_audio
 
+def _safe_normalize(result):
+    """Normalizza in sicurezza: evita la divisione per zero (NaN) quando il
+    risultato è silenzio totale, bug presente in tutti e 4 gli script
+    originali forniti dall'utente."""
+    result = np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
+    peak = np.max(np.abs(result)) if result.size > 0 else 0.0
+    if peak > 1e-8:
+        return result / peak * 0.95
+    return np.zeros_like(result)
+
+def decomposizione_bande(audio, sr, params):
+    """
+    Decomposizione in Bande di Frequenza (crossover a 3 vie, puro DSP,
+    nessuna IA): separa bassi/medi/alti con filtri Butterworth e applica un
+    trattamento diverso a ciascuna banda (bassi rallentati, medi invertiti,
+    alti con eco) prima di ricomporle. È l'unica tecnica del set che lavora
+    nel dominio della frequenza invece che nel dominio del tempo.
+    """
+    if audio.size < 2048:
+        return audio
+
+    low_freq = params.get('low_crossover', 200)
+    high_freq = params.get('high_crossover', 2000)
+    nyquist = sr / 2.0
+
+    try:
+        b_low, a_low = signal.butter(4, min(low_freq / nyquist, 0.99), btype='low')
+        low = signal.filtfilt(b_low, a_low, audio)
+
+        b_high, a_high = signal.butter(4, min(high_freq / nyquist, 0.99), btype='high')
+        high = signal.filtfilt(b_high, a_high, audio)
+
+        mid = audio - low - high
+    except Exception:
+        return audio
+
+    low_stretched = safe_time_stretch(low, params.get('low_stretch', 0.8), sr)
+    mid_reversed = mid[::-1].copy()
+
+    delay_samples = int(sr * params.get('high_delay_sec', 0.14))
+    high_wet = high.copy()
+    if 0 < delay_samples < high.size:
+        delay = np.zeros_like(high)
+        delay[delay_samples:] = high[:-delay_samples] * params.get('high_delay_mix', 0.3)
+        high_wet = high + delay
+
+    max_len = max(low_stretched.size, mid_reversed.size, high_wet.size)
+    if max_len == 0:
+        return audio
+    low_pad = np.pad(low_stretched, (0, max_len - low_stretched.size))
+    mid_pad = np.pad(mid_reversed, (0, max_len - mid_reversed.size))
+    high_pad = np.pad(high_wet, (0, max_len - high_wet.size))
+
+    return _safe_normalize(low_pad + mid_pad + high_pad)
+
+def separazione_hpss(audio, sr, params):
+    """
+    Separazione Armonica/Percussiva (HPSS, filtri mediani sullo
+    spettrogramma — Fitzgerald 2010, puro DSP, nessuna IA/rete neurale):
+    isola i suoni sostenuti (armonici: voci, synth, archi) da quelli
+    impulsivi (percussivi: batteria, colpi) e li ricombina con trattamenti
+    diversi e opposti.
+    """
+    if audio.size < 2048:
+        return audio
+
+    try:
+        margin = (params.get('margin_harmonic', 1.0), params.get('margin_percussive', 5.0))
+        y_harmonic, y_percussive = librosa.effects.hpss(audio, margin=margin)
+    except Exception:
+        return audio
+
+    y_harmonic_shifted = safe_pitch_shift(y_harmonic, sr, params.get('harmonic_pitch_shift', 5))
+
+    if y_harmonic_shifted.size > 0:
+        tt = np.arange(y_harmonic_shifted.size) / sr
+        tremolo = 0.5 + 0.5 * np.sin(2 * np.pi * params.get('tremolo_hz', 6.0) * tt)
+        y_harmonic_mod = y_harmonic_shifted * tremolo
+    else:
+        y_harmonic_mod = y_harmonic_shifted
+
+    y_percussive_fast = safe_time_stretch(y_percussive, params.get('percussive_rate', 2.0), sr)
+
+    if y_harmonic_mod.size == 0 or y_percussive_fast.size == 0:
+        return audio
+
+    min_len = min(y_harmonic_mod.size, y_percussive_fast.size)
+    result = (y_harmonic_mod[:min_len] * params.get('harmonic_weight', 0.6) +
+              y_percussive_fast[:min_len] * params.get('percussive_weight', 1.4))
+
+    return _safe_normalize(result)
+
+def modulazione_spettrale(audio, sr, params):
+    """
+    Modulazione Spettrale (STFT fase/magnitudo, puro DSP nel dominio della
+    frequenza): scompone il segnale in magnitudo e fase, modula la fase con
+    una sinusoide e smussa la magnitudo, poi ricostruisce con ISTFT.
+    Effetto metallico/vetroso estremo. Lo smoothing della magnitudo è
+    vettorizzato con scipy.ndimage.uniform_filter1d invece di un ciclo
+    Python riga-per-riga sui bin di frequenza (molto più veloce, stesso
+    risultato matematico).
+    """
+    if audio.size < 2048:
+        return audio
+
+    try:
+        D = librosa.stft(audio)
+    except Exception:
+        return audio
+
+    if D.shape[1] < 2:
+        return audio
+
+    magnitude = np.abs(D)
+    phase = np.angle(D)
+
+    mod_depth = params.get('phase_mod_depth', 0.5)
+    mod_cycles = params.get('phase_mod_cycles', 20)
+    phase_mod = phase + mod_depth * np.sin(np.linspace(0, mod_cycles, phase.shape[1]))[np.newaxis, :]
+
+    smooth_size = max(1, int(params.get('magnitude_smooth_size', 5)))
+    magnitude_smooth = uniform_filter1d(magnitude, size=smooth_size, axis=1, mode='nearest')
+
+    D_new = magnitude_smooth * np.exp(1j * phase_mod)
+
+    try:
+        result = librosa.istft(D_new, length=audio.size)
+    except Exception:
+        return audio
+
+    return _safe_normalize(result)
+
+def inviluppo_dinamico(audio, sr, params):
+    """
+    Inviluppo Dinamico (Envelope Follower, puro DSP): separa il segnale in
+    parti di "attacco" (volume in salita) e "sustain" (volume in discesa)
+    tramite la trasformata di Hilbert, poi ne inverte l'ordine temporale.
+    Correzione rispetto allo script originale: l'inviluppo grezzo di
+    Hilbert oscilla troppo velocemente su audio polifonico (interferenza
+    tra armoniche) — qui viene smussato con un passa-basso prima di
+    calcolarne il gradiente, altrimenti il risultato è rumore invece di un
+    vero effetto dinamico.
+    """
+    if audio.size < 2048:
+        return audio
+
+    try:
+        envelope = np.abs(signal.hilbert(audio))
+        nyquist = sr / 2.0
+        cutoff = min(params.get('envelope_smooth_hz', 25) / nyquist, 0.99)
+        b, a = signal.butter(2, cutoff, btype='low')
+        envelope_smooth = signal.filtfilt(b, a, envelope)
+    except Exception:
+        return audio
+
+    attack_mask = np.gradient(envelope_smooth) > 0
+    y_attack = audio * attack_mask
+    y_sustain = audio * (~attack_mask)
+
+    if params.get('reorder', 'sustain_first') == 'sustain_first':
+        result = np.concatenate([y_sustain, y_attack])
+    else:
+        result = np.concatenate([y_attack, y_sustain])
+
+    return _safe_normalize(result)
+
 def apply_heavy_loop_decomposition(audio_segment, sr, target_length_samples): # Aggiunto target_length_samples
     """
     Applica una decomposizione molto aggressiva e casuale a un segmento audio.
@@ -1022,7 +1214,11 @@ if uploaded_file is not None:
             "musique_concrete",
             "decostruzione_postmoderna",
             "decomposizione_creativa",
-            "random_chaos"
+            "random_chaos",
+            "decomposizione_bande",
+            "separazione_hpss",
+            "modulazione_spettrale",
+            "inviluppo_dinamico"
         ]
         
         method_labels = {
@@ -1031,7 +1227,11 @@ if uploaded_file is not None:
             "musique_concrete": "🎵 Musique Concrète",
             "decostruzione_postmoderna": "🏛️ Decostruzione Postmoderna",
             "decomposizione_creativa": "🎨 Decomposizione Creativa",
-            "random_chaos": "🌪️ Random Chaos"
+            "random_chaos": "🌪️ Random Chaos",
+            "decomposizione_bande": "🎚️ Decomposizione in Bande",
+            "separazione_hpss": "🥁 Separazione Armonica/Percussiva",
+            "modulazione_spettrale": "🌈 Modulazione Spettrale",
+            "inviluppo_dinamico": "📉 Inviluppo Dinamico"
         }
         
         selected_method = st.selectbox(
@@ -1065,6 +1265,14 @@ if uploaded_file is not None:
                     processed_audio = decomposizione_creativa(audio, sr, params)
                 elif selected_method == "random_chaos":
                     processed_audio = random_chaos(audio, sr, params)
+                elif selected_method == "decomposizione_bande":
+                    processed_audio = decomposizione_bande(audio, sr, params)
+                elif selected_method == "separazione_hpss":
+                    processed_audio = separazione_hpss(audio, sr, params)
+                elif selected_method == "modulazione_spettrale":
+                    processed_audio = modulazione_spettrale(audio, sr, params)
+                elif selected_method == "inviluppo_dinamico":
+                    processed_audio = inviluppo_dinamico(audio, sr, params)
 
                 if processed_audio.size == 0:
                     st.error("❌ Elaborazione fallita - audio risultante vuoto. Prova un metodo diverso o un file audio differente.")
@@ -1157,7 +1365,11 @@ if uploaded_file is not None:
                         "musique_concrete": "MusiqueConcrete",
                         "decostruzione_postmoderna": "DecostruzionePostmoderna",
                         "decomposizione_creativa": "DecomposizioneCreativa",
-                        "random_chaos": "RandomChaos"
+                        "random_chaos": "RandomChaos",
+                        "decomposizione_bande": "DecomposizioneBande",
+                        "separazione_hpss": "SeparazioneHPSS",
+                        "modulazione_spettrale": "ModulazioneSpettrale",
+                        "inviluppo_dinamico": "InviluppoDinamico"
                     }
                     current_selected_method = st.session_state.get('processed_method_main', selected_method)
                     filename = f"{uploaded_file.name.split('.')[0]}_{method_names[current_selected_method]}_MAX.wav"
@@ -1173,7 +1385,11 @@ if uploaded_file is not None:
                     "musique_concrete": "MusiqueConcrete",
                     "decostruzione_postmoderna": "DecostruzionePostmoderna",
                     "decomposizione_creativa": "DecomposizioneCreativa",
-                    "random_chaos": "RandomChaos"
+                    "random_chaos": "RandomChaos",
+                    "decomposizione_bande": "DecomposizioneBande",
+                    "separazione_hpss": "SeparazioneHPSS",
+                    "modulazione_spettrale": "ModulazioneSpettrale",
+                    "inviluppo_dinamico": "InviluppoDinamico"
                 }
                  current_selected_method = st.session_state.get('processed_method_main', selected_method)
                  filename = f"{uploaded_file.name.split('.')[0]}_{method_names[current_selected_method]}_MAX.wav"
@@ -1231,6 +1447,18 @@ if uploaded_file is not None:
                         """,
                         "random_chaos": """
                         Il metodo **"Random Chaos"** è progettato per produrre **risultati altamente imprevedibili e sperimentali**. Ogni esecuzione è unica. Vengono applicate operazioni casuali come pitch shift e time stretch, inversioni casuali, aggiunta di rumore e frammentazione per esplorare i limiti della manipolazione audio.
+                        """,
+                        "decomposizione_bande": """
+                        La **"Decomposizione in Bande"** separa il brano in bassi, medi e alti tramite filtri Butterworth (crossover a 3 vie) e applica un trattamento diverso a ciascuna banda: i bassi vengono rallentati, i medi invertiti nel tempo, gli alti arricchiti con un'eco. È l'unica tecnica del set che lavora nel dominio della frequenza invece che tagliare il brano nel tempo.
+                        """,
+                        "separazione_hpss": """
+                        La **"Separazione Armonica/Percussiva"** isola con filtri mediani sullo spettrogramma (tecnica HPSS classica, nessuna IA) i suoni sostenuti — voci, synth, archi — da quelli impulsivi — batteria, colpi — e li ricombina con trattamenti opposti: la parte armonica viene trasposta e modulata con un tremolo, la parte percussiva accelerata.
+                        """,
+                        "modulazione_spettrale": """
+                        La **"Modulazione Spettrale"** scompone il segnale tramite STFT in magnitudo e fase, modula la fase con una sinusoide e smussa la magnitudo, poi ricostruisce l'audio. Il risultato è un effetto metallico, vetroso, fortemente flangerizzato — l'unica tecnica del set che manipola direttamente lo spettro invece dei campioni nel tempo.
+                        """,
+                        "inviluppo_dinamico": """
+                        L'**"Inviluppo Dinamico"** separa il brano in base alla sua dinamica — parti in cui il volume sta salendo (attacco) o scendendo (sustain) — tramite la trasformata di Hilbert, poi ne inverte l'ordine temporale. Crea un effetto di "respiro" artificiale, ribaltando la struttura energetica del brano invece della sua struttura temporale o timbrica.
                         """
                     }
                     display_method = st.session_state.get('processed_method_main', selected_method)
