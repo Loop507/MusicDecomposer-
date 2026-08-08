@@ -153,6 +153,23 @@ _EMOJI_PATTERN = re.compile(
 def strip_emoji_for_plot(text):
     return _EMOJI_PATTERN.sub("", text).strip()
 
+def mono_to_stereo_haas(mono, sr, delay_ms=18, side_gain=0.6):
+    """Converte un segnale mono in stereo con l'Haas Effect: un canale resta
+    invariato, l'altro viene ritardato di pochi millisecondi e leggermente
+    attenuato. Crea percezione di ampiezza stereo senza alterare il timbro
+    né richiedere librerie esterne. Ritorna un array shape (N, 2), pronto
+    per soundfile.write() e st.audio(). Se l'input è vuoto lo ritorna intatto."""
+    if mono.size == 0:
+        return mono
+    delay_samples = max(1, int(sr * delay_ms / 1000))
+    left = mono
+    right = np.zeros_like(mono)
+    if delay_samples < mono.size:
+        right[delay_samples:] = mono[:-delay_samples] * side_gain
+    else:
+        right = mono * side_gain
+    return np.stack([left, right], axis=-1)  # shape (N, 2)
+
 def safe_pitch_shift(audio, sr, n_steps):
     try:
         if audio.size == 0:
@@ -1024,6 +1041,12 @@ if uploaded_file is not None:
             help="Tutti i metodi ora applicano un'elaborazione approfondita."
         )
 
+        stereo_widening = st.checkbox(
+            "🎧 Esporta in Stereo (Haas Effect)",
+            value=False,
+            help="Converte l'output mono in stereo allargato tramite un breve delay su un canale (Haas Effect). Non altera l'elaborazione, solo ascolto/export finale."
+        )
+
         if st.button("🎭 SCOMPONI E RICOMPONI (Massima Elaborazione)", type="primary", use_container_width=True):
             with st.spinner(f"Applicando {method_labels[selected_method]} con la massima elaborazione..."):
                 
@@ -1078,7 +1101,8 @@ if uploaded_file is not None:
                     # Salva l'audio processato in un file temporaneo per riproduzione e download
                     processed_tmp_path_for_playback = ""
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file_playback:
-                        sf.write(tmp_file_playback.name, processed_audio, sr)
+                        playback_audio = mono_to_stereo_haas(processed_audio, sr) if stereo_widening else processed_audio
+                        sf.write(tmp_file_playback.name, playback_audio, sr)
                         processed_tmp_path_for_playback = tmp_file_playback.name
                     
                     # Rimosso sample_rate=sr
@@ -1113,8 +1137,9 @@ if uploaded_file is not None:
                         looped_result = create_loop(original_audio, sr, loop_duration_option) # Rimosso num_repetitions
                         if looped_result.size > 0:
                             st.success("Singolo segmento loop decomposto generato con successo!")
-                            st.audio(looped_result, format='audio/wav', sample_rate=sr) # Qui sample_rate è ok perché è un numpy array
-                            st.session_state['current_download_audio'] = looped_result # Salva per il download
+                            loop_playback_audio = mono_to_stereo_haas(looped_result, sr) if stereo_widening else looped_result
+                            st.audio(loop_playback_audio, format='audio/wav', sample_rate=sr) # Qui sample_rate è ok perché è un numpy array
+                            st.session_state['current_download_audio'] = looped_result # Salva per il download (mono: il widening si applica solo in fase di export)
                             st.session_state['current_download_type'] = 'loop'
                         else:
                             st.error("Impossibile generare il loop. Controlla i messaggi di avviso sopra.")
@@ -1156,7 +1181,8 @@ if uploaded_file is not None:
 
             if final_audio_for_download.size > 0:
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as final_tmp_file:
-                    sf.write(final_tmp_file.name, final_audio_for_download, sr)
+                    export_audio = mono_to_stereo_haas(final_audio_for_download, sr) if stereo_widening else final_audio_for_download
+                    sf.write(final_tmp_file.name, export_audio, sr)
                     final_download_path = final_tmp_file.name
 
                 st.markdown("---")
