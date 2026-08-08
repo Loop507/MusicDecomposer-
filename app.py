@@ -6,6 +6,7 @@ import soundfile as sf
 import tempfile
 import os
 import random
+import re
 from scipy import signal
 import matplotlib.pyplot as plt
 import traceback
@@ -58,7 +59,7 @@ FIXED_PARAMS = {
         'fragment_size': 0.6,
         'chaos_level': 0.8,
         'structure_preservation': 0.3,
-        'beat_preservation': 0.3,
+        'beat_preservation': 0.45,
         'melody_fragmentation': 1.8
     },
     'musique_concrete': {
@@ -135,6 +136,23 @@ def analyze_audio_structure(audio, sr):
         'onset_frames': onset_frames
     }
 
+# Rimuove le emoji dalle etichette prima di passarle a matplotlib: DejaVu Sans
+# (font di default) non ha i glifi emoji e stamperebbe warning + riquadri vuoti
+# nei titoli dei grafici. L'interfaccia Streamlit (che le mostra correttamente)
+# non è toccata: questa funzione si usa solo per i titoli dei plot.
+_EMOJI_PATTERN = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002600-\U000027BF"
+    "\U0001F1E6-\U0001F1FF"
+    "\uFE0F"
+    "]+",
+    flags=re.UNICODE,
+)
+
+def strip_emoji_for_plot(text):
+    return _EMOJI_PATTERN.sub("", text).strip()
+
 def safe_pitch_shift(audio, sr, n_steps):
     try:
         if audio.size == 0:
@@ -187,6 +205,14 @@ def safe_time_stretch(audio, rate, sr=22050):
         return audio
 
 def cut_up_sonoro(audio, sr, params):
+    """
+    Cut-up Sonoro (ispirato a Burroughs/Gysin): frammenti RAW, senza alcuna
+    elaborazione di pitch o tempo. La tecnica storica tagliava fisicamente
+    il nastro e riaccostava i pezzi così come suonavano — l'unico elemento
+    casuale era DOVE si tagliava, non COME suonava il contenuto. Qui
+    'cut_randomness' introduce jitter sui punti di taglio (lunghezza
+    variabile dei frammenti), il contenuto resta identico all'originale.
+    """
     fragment_size = params['fragment_size']
     randomness = params.get('cut_randomness', 0.7)
     reassembly = params.get('reassembly_style', 'random')
@@ -207,31 +233,20 @@ def cut_up_sonoro(audio, sr, params):
     else:
         step = fragment_samples
 
-    for i in range(0, len(audio) - fragment_samples + 1, step):
-        if len(fragments) >= max_fragments_to_process:
-            break
-        
-        fragment = audio[i:i + fragment_samples]
-
-        if fragment.size == 0:
-            continue
-
+    pos = 0
+    while pos < len(audio) - fragment_samples + 1 and len(fragments) < max_fragments_to_process:
+        this_len = fragment_samples
         if random.random() < randomness:
-            variation = random.uniform(0.7, 1.3)
-            new_size = int(fragment.size * variation)
+            # Jitter sulla lunghezza del taglio: imprecisione della lametta,
+            # non un'elaborazione del suono.
+            jitter = random.uniform(0.6, 1.4)
+            this_len = max(1, int(fragment_samples * jitter))
 
-            if new_size <= 0:
-                continue
-
-            if fragment.size > 0:
-                if new_size < fragment.size:
-                    fragment = fragment[:new_size]
-                else:
-                    indices = np.linspace(0, fragment.size - 1, new_size)
-                    fragment = np.interp(indices, np.arange(fragment.size), fragment)
-
+        fragment = audio[pos:pos + this_len]
         if fragment.size > 0:
             fragments.append(fragment)
+
+        pos += step
 
     if len(fragments) == 0:
         return np.array([])
@@ -427,6 +442,15 @@ def musique_concrete(audio, sr, params):
             except Exception:
                 grain = np.array([])
 
+        # "Sillon fermé" (locked groove): tratto storico della musique concrète
+        # di Schaeffer, la ripetizione ossessiva di un micro-frammento in loop
+        # stretto. La finestra Hann già applicata crea un naturale pulsare
+        # attacco/rilascio ad ogni ripetizione, distinto da qualunque altra
+        # tecnica del set (nessuna delle altre ripete un grano su se stesso).
+        if grain.size > 0 and random.random() < 0.2:
+            repeats = random.randint(2, 5)
+            grain = np.tile(grain, repeats)
+
         if grain.size > 0:
             grains.append(grain)
 
@@ -554,6 +578,23 @@ def decostruzione_postmoderna(audio, sr, params):
             except Exception:
                 processed_frag = fragment
 
+        # Colorazione timbrica: simula una "citazione" proveniente da una
+        # fonte diversa (più chiara/telefonica o più cupa/lo-fi), tratto
+        # caratteristico del pastiche postmoderno (giustapposizione di
+        # materiali eterogenei, non solo di ritmi/durate diverse).
+        if processed_frag.size > 100 and random.random() < context_shift * 0.3:
+            try:
+                nyquist = sr / 2.0
+                if random.random() < 0.5:
+                    cutoff = min(random.uniform(2000, 6000) / nyquist, 0.99)
+                    b, a = signal.butter(2, cutoff, btype='high')
+                else:
+                    cutoff = min(random.uniform(400, 1800) / nyquist, 0.99)
+                    b, a = signal.butter(2, cutoff, btype='low')
+                processed_frag = signal.filtfilt(b, a, processed_frag)
+            except Exception:
+                pass
+
         if processed_frag.size > 0:
             processed_fragments.append(processed_frag)
 
@@ -569,29 +610,20 @@ def decostruzione_postmoderna(audio, sr, params):
     if len(final_fragments) == 1:
         return final_fragments[0]
 
-    result = final_fragments[0].copy()
-    
-    for next_fragment in final_fragments[1:]:
-        if next_fragment.size == 0:
+    # Giustapposizione a taglio netto: il postmoderno esibisce le "virgolette"
+    # tra una citazione e l'altra invece di smussarle con un crossfade.
+    # Un micro-silenzio occasionale accentua ulteriormente la cesura.
+    result_parts = []
+    for idx, frag in enumerate(final_fragments):
+        if frag.size == 0:
             continue
+        result_parts.append(frag)
+        if idx < len(final_fragments) - 1 and random.random() < context_shift * 0.35:
+            gap_samples = int(sr * random.uniform(0.03, 0.15))
+            if gap_samples > 0:
+                result_parts.append(np.zeros(gap_samples, dtype=audio.dtype))
 
-        crossfade_samples_desired = int(0.02 * sr) 
-        current_crossfade_len = min(crossfade_samples_desired, result.size, next_fragment.size)
-        
-        if current_crossfade_len > 0:
-            result_overlap = result[-current_crossfade_len:]
-            fade_out = np.linspace(1, 0, current_crossfade_len)
-            result[-current_crossfade_len:] = result_overlap * fade_out
-            
-            next_fragment_overlap = next_fragment[:current_crossfade_len]
-            fade_in = np.linspace(0, 1, current_crossfade_len)
-            next_fragment_faded_in = next_fragment_overlap * fade_in
-            
-            combined_overlap = result[-current_crossfade_len:] + next_fragment_faded_in
-            
-            result = np.concatenate([result[:-current_crossfade_len], combined_overlap, next_fragment[current_crossfade_len:]])
-        else:
-            result = np.concatenate([result, next_fragment])
+    result = np.concatenate(result_parts) if result_parts else np.array([])
 
     if len(result) > 0:
         max_val = np.max(np.abs(result))
@@ -1244,7 +1276,7 @@ if uploaded_file is not None:
                     if audio_for_charts.size > 0: 
                         time_proc = np.linspace(0, len(audio_for_charts)/sr, len(audio_for_charts))
                         ax2.plot(time_proc, audio_for_charts, color='red', alpha=0.7)
-                    ax2.set_title(f"Forma d'Onda Elaborata ({'Loop Decomposto' if 'current_download_type' in st.session_state and st.session_state['current_download_type'] == 'loop' else method_labels[st.session_state.get('processed_method_main', selected_method)]})")
+                    ax2.set_title(f"Forma d'Onda Elaborata ({'Loop Decomposto' if 'current_download_type' in st.session_state and st.session_state['current_download_type'] == 'loop' else strip_emoji_for_plot(method_labels[st.session_state.get('processed_method_main', selected_method)])})")
                     ax2.set_xlabel("Tempo (sec)")
                     ax2.set_ylabel("Ampiezza")
                     ax2.grid(True, alpha=0.3)
