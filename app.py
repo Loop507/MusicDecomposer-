@@ -7,10 +7,7 @@ import tempfile
 import os
 import random
 from scipy import signal
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
-import io
 import traceback
 
 # Configurazione pagina
@@ -305,7 +302,7 @@ def remix_destrutturato(audio, sr, params):
     if len(fragments) == 0:
         return np.array([])
 
-    if beat_preservation > 0.3 and len(fragments) > 1:
+    if beat_preservation >= 0.3 and len(fragments) > 1:
         preserve_count = int(len(fragments) * beat_preservation)
         preserve_indices = random.sample(range(len(fragments)), min(preserve_count, len(fragments)))
         
@@ -433,8 +430,6 @@ def musique_concrete(audio, sr, params):
                 max_start_pos = 0
             
             start_pos = random.randint(0, max(0, max_start_pos))
-            end_pos = start_pos + grain.size
-            
             grain_to_add = grain[:min(grain.size, max_length_samples - start_pos)]
             
             if grain_to_add.size > 0:
@@ -627,7 +622,7 @@ def decomposizione_creativa(audio, sr, params):
 
         if random.random() < discontinuity * 0.15: 
             if random.random() < 0.5:
-                fragment = np.zeros_like(fragment) * random.uniform(0.05, 0.2) 
+                fragment = fragment * random.uniform(0.05, 0.2)  # attenua fortemente, non azzera del tutto
             else:
                 continue 
 
@@ -761,8 +756,8 @@ def apply_heavy_loop_decomposition(audio_segment, sr, target_length_samples): # 
 
     processed_segment = audio_segment.copy()
 
-    # Livello di caos generale per questa decomposizione
-    chaos_intensity = 1.0 # Sempre al massimo per "molto decomposto"
+    # Nota: le trasformazioni sottostanti sono già calibrate al massimo livello
+    # di intensità ("molto decomposto") con valori fissi.
 
     # 1. Pitch Shift casuale e significativo
     if processed_segment.size > 0:
@@ -910,7 +905,10 @@ if uploaded_file is not None:
     tmp_file_path = None # Inizializza per garantire che sia definito anche in caso di errore
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-            tmp_file.write(uploaded_file.read())
+            # getvalue() invece di read(): read() consuma il buffer, quindi ai
+            # rerun successivi (es. click su un bottone in sidebar) restituirebbe
+            # b"" e scriverebbe un WAV vuoto/corrotto. getvalue() è idempotente.
+            tmp_file.write(uploaded_file.getvalue())
             tmp_file_path = tmp_file.name
 
         audio, sr = librosa.load(tmp_file_path, sr=target_sr, duration=300)
@@ -983,6 +981,7 @@ if uploaded_file is not None:
                 else:
                     st.session_state['processed_audio_main'] = processed_audio # Rinominato per chiarezza
                     st.session_state['current_download_type'] = 'main_decomposed' # Imposta tipo download
+                    st.session_state['processed_method_main'] = selected_method # Metodo realmente usato per la generazione (per filename/report coerenti)
                     
                     st.success("✅ Decomposizione completata!")
                     
@@ -1068,7 +1067,7 @@ if uploaded_file is not None:
                         "decomposizione_creativa": "DecomposizioneCreativa",
                         "random_chaos": "RandomChaos"
                     }
-                    current_selected_method = selected_method 
+                    current_selected_method = st.session_state.get('processed_method_main', selected_method)
                     filename = f"{uploaded_file.name.split('.')[0]}_{method_names[current_selected_method]}_MAX.wav"
                 elif st.session_state['current_download_type'] == 'loop' and 'current_download_audio' in st.session_state:
                     final_audio_for_download = st.session_state['current_download_audio']
@@ -1084,7 +1083,7 @@ if uploaded_file is not None:
                     "decomposizione_creativa": "DecomposizioneCreativa",
                     "random_chaos": "RandomChaos"
                 }
-                 current_selected_method = selected_method 
+                 current_selected_method = st.session_state.get('processed_method_main', selected_method)
                  filename = f"{uploaded_file.name.split('.')[0]}_{method_names[current_selected_method]}_MAX.wav"
 
 
@@ -1141,12 +1140,13 @@ if uploaded_file is not None:
                         Il metodo **"Random Chaos"** è progettato per produrre **risultati altamente imprevedibili e sperimentali**. Ogni esecuzione è unica. Vengono applicate operazioni casuali come pitch shift e time stretch, inversioni casuali, aggiunta di rumore e frammentazione per esplorare i limiti della manipolazione audio.
                         """
                     }
+                    display_method = st.session_state.get('processed_method_main', selected_method)
                     st.markdown(f"""
-                    Con il metodo **"{method_labels[selected_method]}"** applicato con la **massima elaborazione**, il brano originale è stato trasformato in un'opera sonora unica e profonda.
+                    Con il metodo **"{method_labels[display_method]}"** applicato con la **massima elaborazione**, il brano originale è stato trasformato in un'opera sonora unica e profonda.
                     """)
                     st.markdown("---")
                     st.markdown("**Descrizione della Tecnica Applicata:**")
-                    st.markdown(technique_descriptions[selected_method])
+                    st.markdown(technique_descriptions[display_method])
 
                 st.markdown("---")
                 st.markdown("### Riepilogo dei Cambiamenti Quantitativi:")
@@ -1165,7 +1165,7 @@ if uploaded_file is not None:
                     st.markdown(f"* Durata Singolo Segmento Loop: {loop_duration_option:.1f}s")
                     st.markdown("* Stile Decomposizione Loop: Molto Decomposto (Random Chaos)")
                 else:
-                    params_to_display = FIXED_PARAMS[selected_method].copy()
+                    params_to_display = FIXED_PARAMS[st.session_state.get('processed_method_main', selected_method)].copy()
                     for param_name, param_value in params_to_display.items():
                         if param_name == 'fragment_size':
                             st.markdown(f"* Dimensione Frammenti: {param_value}s")
@@ -1209,7 +1209,7 @@ if uploaded_file is not None:
                     if audio_for_charts.size > 0: 
                         time_proc = np.linspace(0, len(audio_for_charts)/sr, len(audio_for_charts))
                         ax2.plot(time_proc, audio_for_charts, color='red', alpha=0.7)
-                    ax2.set_title(f"Forma d'Onda Elaborata ({'Loop Decomposto' if 'current_download_type' in st.session_state and st.session_state['current_download_type'] == 'loop' else method_labels[selected_method]})")
+                    ax2.set_title(f"Forma d'Onda Elaborata ({'Loop Decomposto' if 'current_download_type' in st.session_state and st.session_state['current_download_type'] == 'loop' else method_labels[st.session_state.get('processed_method_main', selected_method)]})")
                     ax2.set_xlabel("Tempo (sec)")
                     ax2.set_ylabel("Ampiezza")
                     ax2.grid(True, alpha=0.3)
