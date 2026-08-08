@@ -10,6 +10,18 @@ from scipy import signal
 import matplotlib.pyplot as plt
 import traceback
 
+# RubberBand offre pitch-shift/time-stretch di qualità nettamente superiore
+# rispetto al phase vocoder di librosa, specialmente su shift/stretch estremi
+# (meno artefatti metallici / "phasiness"). Import opzionale: se il pacchetto
+# Python o il binario di sistema 'rubberband-cli' non sono disponibili
+# (es. su Streamlit Cloud senza packages.txt), l'app ricade automaticamente
+# su librosa senza errori.
+try:
+    import pyrubberband as pyrb
+    RUBBERBAND_AVAILABLE = True
+except (ImportError, OSError):
+    RUBBERBAND_AVAILABLE = False
+
 # Configurazione pagina
 st.set_page_config( 
     page_title="MusicDecomposer by loop507",
@@ -133,8 +145,15 @@ def safe_pitch_shift(audio, sr, n_steps):
              return audio # Non shiftare audio troppo corto
 
         n_steps = np.clip(n_steps, -12, 12)
+
+        if RUBBERBAND_AVAILABLE:
+            try:
+                result = pyrb.pitch_shift(audio, sr, n_steps)
+                return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
+            except Exception:
+                pass  # binario rubberband-cli non disponibile a runtime: ricadi su librosa
+
         hop_length = 512 if len(audio) < sr * 30 else 1024
-        
         # Rimosso n_length=len(audio) come richiesto per risolvere l'errore
         result = librosa.effects.pitch_shift(audio, sr=sr, n_steps=n_steps, hop_length=hop_length)
         return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
@@ -142,7 +161,7 @@ def safe_pitch_shift(audio, sr, n_steps):
         st.warning(f"Pitch shift fallito: {e}")
         return audio
 
-def safe_time_stretch(audio, rate):
+def safe_time_stretch(audio, rate, sr=22050):
     try:
         if audio.size == 0:
             return np.array([])
@@ -152,8 +171,15 @@ def safe_time_stretch(audio, rate):
             return audio # Non stretchare audio troppo corto
 
         rate = np.clip(rate, 0.25, 4.0)
+
+        if RUBBERBAND_AVAILABLE:
+            try:
+                result = pyrb.time_stretch(audio, sr, rate)
+                return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
+            except Exception:
+                pass  # binario rubberband-cli non disponibile a runtime: ricadi su librosa
+
         hop_length = 512 if len(audio) < 44100 * 30 else 1024
-        
         result = librosa.effects.time_stretch(audio, rate=rate, hop_length=hop_length)
         return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
     except Exception as e:
@@ -897,21 +923,30 @@ def create_loop(original_audio, sr, loop_duration_sec): # Rimosso num_repetition
     return decomposed_loop_segment
 
 
+@st.cache_data(show_spinner=False)
+def load_audio_cached(file_bytes, target_sr, max_duration=300):
+    """Decodifica l'audio caricato una sola volta per file (hash dei bytes come chiave).
+    Evita di rieseguire librosa.load ad ogni rerun causato da widget in sidebar."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+        tmp_file.write(file_bytes)
+        tmp_path = tmp_file.name
+    try:
+        audio, sr = librosa.load(tmp_path, sr=target_sr, duration=max_duration)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+    return audio, sr
+
+
 # Logica principale per processare l'audio
 if uploaded_file is not None:
     target_sr = 22050
     # Rimossa la sezione "⚙️ Impostazioni Caricamento Audio" dalla sidebar
-    
-    tmp_file_path = None # Inizializza per garantire che sia definito anche in caso di errore
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-            # getvalue() invece di read(): read() consuma il buffer, quindi ai
-            # rerun successivi (es. click su un bottone in sidebar) restituirebbe
-            # b"" e scriverebbe un WAV vuoto/corrotto. getvalue() è idempotente.
-            tmp_file.write(uploaded_file.getvalue())
-            tmp_file_path = tmp_file.name
 
-        audio, sr = librosa.load(tmp_file_path, sr=target_sr, duration=300)
+    try:
+        audio, sr = load_audio_cached(uploaded_file.getvalue(), target_sr)
 
         # Salva l'audio originale caricato in session_state per il loop
         st.session_state['original_audio'] = audio
@@ -1240,19 +1275,10 @@ if uploaded_file is not None:
                     
                     plt.tight_layout()
                     st.pyplot(fig)
-                
-        # Pulisci il file temporaneo dell'audio caricato all'inizio
-        try:
-            if tmp_file_path and os.path.exists(tmp_file_path):
-                os.unlink(tmp_file_path)
-        except Exception as e:
-            st.error(f"Errore durante la pulizia del file originale: {e}")
 
     except Exception as e:
         st.error(f"❌ Errore nel processamento principale: {str(e)}")
         st.error(f"Dettagli: {traceback.format_exc()}")
-        if 'tmp_file_path' in locals() and tmp_file_path and os.path.exists(tmp_file_path):
-            os.unlink(tmp_file_path)
 
 
 else:
