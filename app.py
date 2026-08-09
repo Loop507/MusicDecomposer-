@@ -5,6 +5,7 @@ import librosa.display
 import soundfile as sf
 import tempfile
 import os
+import io
 import random
 import re
 from scipy import signal
@@ -23,6 +24,15 @@ try:
     RUBBERBAND_AVAILABLE = True
 except (ImportError, OSError):
     RUBBERBAND_AVAILABLE = False
+
+# pretty_midi: libreria di sola I/O per file MIDI (scrittura note/eventi),
+# nessuna IA coinvolta — usata solo per serializzare in formato .mid i
+# risultati del pitch-tracking DSP (pYIN) e della griglia dei beat.
+try:
+    import pretty_midi
+    PRETTY_MIDI_AVAILABLE = True
+except ImportError:
+    PRETTY_MIDI_AVAILABLE = False
 
 # Configurazione pagina
 st.set_page_config( 
@@ -162,6 +172,102 @@ def analyze_audio_structure(audio, sr):
         'onset_frames': onset_frames
     }
 
+# Profili tonali di Krumhansl-Schmuckler (dati sperimentali di percezione
+# uditiva, non machine learning): rappresentano quanto ogni classe di
+# altezza è percepita come "stabile" in un contesto maggiore/minore.
+_KS_MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+_KS_MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+_PITCH_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+# Gradi della scala maggiore/minore naturale, in semitoni dalla tonica.
+_MAJOR_SCALE_STEPS = [0, 2, 4, 5, 7, 9, 11]
+_MINOR_SCALE_STEPS = [0, 2, 3, 5, 7, 8, 10]
+
+def _to_scalar_tempo(tempo):
+    """Converte in modo robusto il tempo restituito da librosa.beat.beat_track
+    in un float Python semplice. A seconda della versione di librosa, il
+    valore può essere uno scalare, un numpy scalar o un array 1-D — un
+    float(tempo) diretto su un array solleva TypeError con numpy recenti."""
+    if tempo is None:
+        return 0.0
+    arr = np.asarray(tempo).flatten()
+    if arr.size == 0:
+        return 0.0
+    val = float(arr[0])
+    return val if not np.isnan(val) else 0.0
+
+def detect_musical_key(audio, sr):
+    """
+    Rileva la chiave musicale con l'algoritmo di Krumhansl-Schmuckler: puro
+    DSP/statistica (correlazione di Pearson tra il chromagramma del brano
+    e i profili tonali sperimentali), nessuna rete neurale coinvolta.
+    Ritorna un dict con tonica, modo (major/minor) e confidenza (0-1).
+    """
+    fallback = {'pitch_class': 0, 'key': 'C', 'mode': 'major', 'confidence': 0.0}
+    if audio.size < sr * 2:  # troppo corto per un'analisi tonale affidabile
+        return fallback
+
+    try:
+        max_len = min(audio.size, sr * 90)
+        chroma = librosa.feature.chroma_cqt(y=audio[:max_len], sr=sr)
+        chroma_vals = np.sum(chroma, axis=1)
+
+        if np.sum(chroma_vals) < 1e-8:
+            return fallback
+
+        best_corr = -2.0
+        best_pc = 0
+        best_mode = 'major'
+        for pc in range(12):
+            major_rotated = np.roll(_KS_MAJOR_PROFILE, pc)
+            minor_rotated = np.roll(_KS_MINOR_PROFILE, pc)
+            corr_major = np.corrcoef(chroma_vals, major_rotated)[0, 1]
+            corr_minor = np.corrcoef(chroma_vals, minor_rotated)[0, 1]
+            if not np.isnan(corr_major) and corr_major > best_corr:
+                best_corr = corr_major
+                best_pc = pc
+                best_mode = 'major'
+            if not np.isnan(corr_minor) and corr_minor > best_corr:
+                best_corr = corr_minor
+                best_pc = pc
+                best_mode = 'minor'
+
+        confidence = max(0.0, min(1.0, (best_corr + 1) / 2))
+        return {'pitch_class': best_pc, 'key': _PITCH_NAMES[best_pc], 'mode': best_mode, 'confidence': confidence}
+    except Exception:
+        return fallback
+
+def snap_semitones_to_key(n_steps, key_info):
+    """
+    Arrotonda uno shift in semitoni al grado più vicino della scala della
+    chiave rilevata, cosi' il pitch-shift resta "in tonalità" invece di
+    essere un valore libero qualsiasi. Puro arrotondamento matematico.
+    """
+    if not key_info:
+        return n_steps
+    scale = _MAJOR_SCALE_STEPS if key_info.get('mode') == 'major' else _MINOR_SCALE_STEPS
+    sign = 1 if n_steps >= 0 else -1
+    magnitude = abs(n_steps)
+    octave = int(magnitude // 12)
+    remainder = magnitude - octave * 12
+    # trova il grado di scala più vicino al resto in semitoni
+    nearest_degree = min(scale, key=lambda s: abs(s - remainder))
+    snapped = sign * (octave * 12 + nearest_degree)
+    return float(snapped)
+
+def quantize_fragment_to_beat(fragment_size_sec, bpm):
+    """
+    Arrotonda una durata di frammento al multiplo di battito più vicino
+    (mezzo, uno, due, quattro o otto battiti) usando il BPM rilevato via
+    librosa.beat.beat_track. Puro calcolo aritmetico, nessuna IA: i tagli
+    finiscono così più spesso "in tempo" col brano invece che a durate
+    arbitrarie fisse.
+    """
+    if not bpm or bpm <= 0:
+        return fragment_size_sec
+    beat_duration = 60.0 / float(bpm)
+    candidates = [beat_duration * m for m in (0.5, 1, 2, 4, 8)]
+    return min(candidates, key=lambda c: abs(c - fragment_size_sec))
+
 # Rimuove le emoji dalle etichette prima di passarle a matplotlib: DejaVu Sans
 # (font di default) non ha i glifi emoji e stamperebbe warning + riquadri vuoti
 # nei titoli dei grafici. L'interfaccia Streamlit (che le mostra correttamente)
@@ -196,7 +302,7 @@ def mono_to_stereo_haas(mono, sr, delay_ms=18, side_gain=0.6):
         right = mono * side_gain
     return np.stack([left, right], axis=-1)  # shape (N, 2)
 
-def safe_pitch_shift(audio, sr, n_steps):
+def safe_pitch_shift(audio, sr, n_steps, key_info=None):
     try:
         if audio.size == 0:
             return np.array([])
@@ -206,6 +312,8 @@ def safe_pitch_shift(audio, sr, n_steps):
              return audio # Non shiftare audio troppo corto
 
         n_steps = np.clip(n_steps, -12, 12)
+        if key_info:
+            n_steps = snap_semitones_to_key(n_steps, key_info)
 
         if RUBBERBAND_AVAILABLE:
             try:
@@ -369,7 +477,7 @@ def remix_destrutturato(audio, sr, params):
             if random.random() < melody_fragmentation / 2.0:
                 try:
                     shift_steps = random.uniform(-6, 6)
-                    fragment = safe_pitch_shift(fragment, sr, shift_steps)
+                    fragment = safe_pitch_shift(fragment, sr, shift_steps, key_info=params.get('key_info'))
                 except Exception:
                     fragment = np.array([])
 
@@ -474,7 +582,7 @@ def musique_concrete(audio, sr, params):
         if grain.size > 0 and random.random() < chaos_level / 2.0:
             try:
                 shift = random.uniform(-12, 12)
-                grain = safe_pitch_shift(grain, sr, shift)
+                grain = safe_pitch_shift(grain, sr, shift, key_info=params.get('key_info'))
             except Exception:
                 grain = np.array([])
 
@@ -602,7 +710,7 @@ def decostruzione_postmoderna(audio, sr, params):
                     fade = np.linspace(1, 0.1, len(processed_frag))
                     processed_frag = processed_frag * fade
                 elif transform_choice == 'pitch_shift_subtle':
-                    processed_frag = safe_pitch_shift(processed_frag, sr, random.uniform(-2, 2))
+                    processed_frag = safe_pitch_shift(processed_frag, sr, random.uniform(-2, 2), key_info=params.get('key_info'))
             except Exception:
                 processed_frag = fragment
 
@@ -730,7 +838,7 @@ def decomposizione_creativa(audio, sr, params):
         if random.random() < emotional_shift * 0.3: 
             if random.random() < 0.5:
                 shift_steps = random.uniform(-12 * emotional_shift, 12 * emotional_shift) 
-                fragment = safe_pitch_shift(fragment, sr, shift_steps)
+                fragment = safe_pitch_shift(fragment, sr, shift_steps, key_info=params.get('key_info'))
             else:
                 stretch_rate = random.uniform(1 - 0.4 * emotional_shift, 1 + 0.4 * emotional_shift) 
                 fragment = safe_time_stretch(fragment, stretch_rate)
@@ -764,7 +872,7 @@ def random_chaos(audio, sr, params):
     # Pitch Shift
     if random.random() < 0.6 * chaos_level:
         shift_steps = random.uniform(-12, 12) 
-        processed_audio = safe_pitch_shift(processed_audio, sr, shift_steps)
+        processed_audio = safe_pitch_shift(processed_audio, sr, shift_steps, key_info=params.get('key_info'))
         # Check if pitch shift resulted in empty array (e.g. if audio was too short)
         if processed_audio.size == 0: 
             return np.array([])
@@ -814,7 +922,7 @@ def random_chaos(audio, sr, params):
                 if random.random() < 0.3 * chaos_level:
                     fragment = fragment[::-1]
                 if random.random() < 0.2 * chaos_level:
-                    fragment = safe_pitch_shift(fragment, sr, random.uniform(-4, 4))
+                    fragment = safe_pitch_shift(fragment, sr, random.uniform(-4, 4), key_info=params.get('key_info'))
                 
                 chaos_fragments.append(fragment)
                 current_pos += frag_len + int(sr * random.uniform(0, 0.5))
@@ -856,6 +964,23 @@ def _safe_normalize(result):
         return result / peak * 0.95
     return np.zeros_like(result)
 
+def split_bands(audio, sr, low_freq=200, high_freq=2000):
+    """
+    Separa l'audio in tre bande (bassi/medi/alti) con un crossover
+    Butterworth a 3 vie. Riusata sia dalla tecnica "Decomposizione in
+    Bande" sia dall'export degli pseudo-stem in frequenza.
+    Ritorna (low, mid, high); solleva eccezione se l'input è troppo corto.
+    """
+    nyquist = sr / 2.0
+    b_low, a_low = signal.butter(4, min(low_freq / nyquist, 0.99), btype='low')
+    low = signal.filtfilt(b_low, a_low, audio)
+
+    b_high, a_high = signal.butter(4, min(high_freq / nyquist, 0.99), btype='high')
+    high = signal.filtfilt(b_high, a_high, audio)
+
+    mid = audio - low - high
+    return low, mid, high
+
 def decomposizione_bande(audio, sr, params):
     """
     Decomposizione in Bande di Frequenza (crossover a 3 vie, puro DSP,
@@ -869,16 +994,9 @@ def decomposizione_bande(audio, sr, params):
 
     low_freq = params.get('low_crossover', 200)
     high_freq = params.get('high_crossover', 2000)
-    nyquist = sr / 2.0
 
     try:
-        b_low, a_low = signal.butter(4, min(low_freq / nyquist, 0.99), btype='low')
-        low = signal.filtfilt(b_low, a_low, audio)
-
-        b_high, a_high = signal.butter(4, min(high_freq / nyquist, 0.99), btype='high')
-        high = signal.filtfilt(b_high, a_high, audio)
-
-        mid = audio - low - high
+        low, mid, high = split_bands(audio, sr, low_freq, high_freq)
     except Exception:
         return audio
 
@@ -918,7 +1036,7 @@ def separazione_hpss(audio, sr, params):
     except Exception:
         return audio
 
-    y_harmonic_shifted = safe_pitch_shift(y_harmonic, sr, params.get('harmonic_pitch_shift', 5))
+    y_harmonic_shifted = safe_pitch_shift(y_harmonic, sr, params.get('harmonic_pitch_shift', 5), key_info=params.get('key_info'))
 
     if y_harmonic_shifted.size > 0:
         tt = np.arange(y_harmonic_shifted.size) / sr
@@ -1011,6 +1129,74 @@ def inviluppo_dinamico(audio, sr, params):
         result = np.concatenate([y_attack, y_sustain])
 
     return _safe_normalize(result)
+
+def audio_to_midi_monophonic(audio, sr, tempo=120.0, beats=None):
+    """
+    Esporta un MIDI "limitato" — non è una trascrizione polifonica completa
+    (richiederebbe un modello IA tipo Basic Pitch): una traccia melodica
+    monofonica ottenuta con pYIN (pitch-tracking ad autocorrelazione, puro
+    DSP, nessuna rete neurale) più una traccia ritmica dalla griglia dei
+    beat già rilevata. Funziona bene su linee melodiche isolate (es. lo
+    stem armonico HPSS), molto meno su un mix polifonico complesso.
+    Analizza al massimo i primi 60s per motivi di performance.
+    Ritorna un oggetto pretty_midi.PrettyMIDI, o None se non disponibile.
+    """
+    if not PRETTY_MIDI_AVAILABLE or audio.size < sr:
+        return None
+
+    try:
+        pm = pretty_midi.PrettyMIDI(initial_tempo=_to_scalar_tempo(tempo) or 120.0)
+
+        max_len = min(audio.size, sr * 60)
+        audio_for_midi = audio[:max_len]
+
+        melody = pretty_midi.Instrument(program=0, name="Melodia (pYIN, mono)")
+        f0, voiced_flag, voiced_prob = librosa.pyin(
+            audio_for_midi, sr=sr,
+            fmin=librosa.note_to_hz('C2'),
+            fmax=librosa.note_to_hz('C7'),
+        )
+        hop_length = 512  # default interno di librosa.pyin
+        frame_times = librosa.frames_to_time(np.arange(len(f0)), sr=sr, hop_length=hop_length)
+
+        note_start = None
+        note_pitch = None
+        for i in range(len(f0)):
+            voiced = bool(voiced_flag[i]) and not np.isnan(f0[i])
+            midi_pitch = int(round(librosa.hz_to_midi(f0[i]))) if voiced else None
+
+            if voiced and note_pitch is None:
+                note_start, note_pitch = frame_times[i], midi_pitch
+            elif voiced and midi_pitch != note_pitch:
+                melody.notes.append(pretty_midi.Note(
+                    velocity=90, pitch=int(np.clip(note_pitch, 0, 127)),
+                    start=note_start, end=frame_times[i]))
+                note_start, note_pitch = frame_times[i], midi_pitch
+            elif not voiced and note_pitch is not None:
+                melody.notes.append(pretty_midi.Note(
+                    velocity=90, pitch=int(np.clip(note_pitch, 0, 127)),
+                    start=note_start, end=frame_times[i]))
+                note_pitch = None
+
+        if note_pitch is not None:
+            melody.notes.append(pretty_midi.Note(
+                velocity=90, pitch=int(np.clip(note_pitch, 0, 127)),
+                start=note_start, end=frame_times[-1]))
+
+        pm.instruments.append(melody)
+
+        if beats is not None and len(beats) > 0:
+            rhythm = pretty_midi.Instrument(program=0, is_drum=True, name="Click Ritmico (beat grid)")
+            beat_times = librosa.frames_to_time(np.asarray(beats), sr=sr, hop_length=1024)
+            for bt in beat_times:
+                if bt <= max_len / sr:
+                    rhythm.notes.append(pretty_midi.Note(
+                        velocity=100, pitch=42, start=float(bt), end=float(bt) + 0.05))
+            pm.instruments.append(rhythm)
+
+        return pm
+    except Exception:
+        return None
 
 def apply_heavy_loop_decomposition(audio_segment, sr, target_length_samples): # Aggiunto target_length_samples
     """
@@ -1181,6 +1367,19 @@ def load_audio_cached(file_bytes, target_sr, max_duration=300):
     return audio, sr
 
 
+@st.cache_data(show_spinner=False)
+def analyze_metadata_cached(file_bytes, target_sr):
+    """Rileva BPM, griglia dei beat e chiave musicale una sola volta per
+    file (stessa chiave di cache di load_audio_cached: bytes+target_sr).
+    Evita di ripetere l'analisi ad ogni rerun della UI."""
+    audio, sr = load_audio_cached(file_bytes, target_sr)
+    structure = analyze_audio_structure(audio, sr)
+    key_info = detect_musical_key(audio, sr)
+    tempo = structure['tempo']
+    tempo = _to_scalar_tempo(tempo)
+    return {'tempo': tempo, 'beats': structure['beats'], 'key_info': key_info}
+
+
 # Logica principale per processare l'audio
 if uploaded_file is not None:
     target_sr = 22050
@@ -1193,6 +1392,10 @@ if uploaded_file is not None:
         st.session_state['original_audio'] = audio
         st.session_state['sr'] = sr
 
+        with st.spinner("Analizzo BPM e chiave musicale (DSP puro, nessuna IA)..."):
+            metadata = analyze_metadata_cached(uploaded_file.getvalue(), target_sr)
+        st.session_state['audio_metadata'] = metadata
+
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Durata Caricata", f"{len(audio)/sr:.2f} sec")
@@ -1200,6 +1403,15 @@ if uploaded_file is not None:
             st.metric("Sample Rate Elaborazione", f"{sr} Hz")
         with col3:
             st.metric("Canali", "Mono")
+
+        col4, col5 = st.columns(2)
+        with col4:
+            bpm_display = f"{metadata['tempo']:.1f} BPM" if metadata['tempo'] > 0 else "Non rilevato"
+            st.metric("🥁 BPM Rilevato", bpm_display)
+        with col5:
+            ki = metadata['key_info']
+            mode_it = "Maggiore" if ki['mode'] == 'major' else "Minore"
+            st.metric("🎼 Chiave Rilevata", f"{ki['key']} {mode_it}", f"confidenza {ki['confidence']:.0%}")
 
         st.subheader("Audio Originale (Caricato)")
         # Rimosso sample_rate=sr
@@ -1247,10 +1459,26 @@ if uploaded_file is not None:
             help="Converte l'output mono in stereo allargato tramite un breve delay su un canale (Haas Effect). Non altera l'elaborazione, solo ascolto/export finale."
         )
 
+        beat_aware_cutting = st.checkbox(
+            "🎯 Taglio Intelligente sui Beat",
+            value=False,
+            help=f"Arrotonda la durata dei frammenti al multiplo di battito più vicino, usando il BPM rilevato ({metadata['tempo']:.1f} BPM). Puro calcolo, nessuna IA."
+        )
+
+        key_aware_pitch = st.checkbox(
+            "🎼 Pitch-shift in Tonalità",
+            value=False,
+            help=f"Vincola i pitch-shift casuali ai gradi della scala rilevata ({metadata['key_info']['key']} {metadata['key_info']['mode']}), invece di uno spostamento libero in semitoni."
+        )
+
         if st.button("🎭 SCOMPONI E RICOMPONI (Massima Elaborazione)", type="primary", use_container_width=True):
             with st.spinner(f"Applicando {method_labels[selected_method]} con la massima elaborazione..."):
                 
                 params = FIXED_PARAMS[selected_method].copy()
+                if beat_aware_cutting and 'fragment_size' in params:
+                    params['fragment_size'] = quantize_fragment_to_beat(params['fragment_size'], metadata['tempo'])
+                if key_aware_pitch:
+                    params['key_info'] = metadata['key_info']
                 processed_audio = np.array([])
                 
                 if selected_method == "cut_up_sonoro":
@@ -1415,6 +1643,85 @@ if uploaded_file is not None:
                 os.unlink(final_download_path) 
             
             # --- Fine Sezione Download ---
+
+            # --- Pseudo-Stem DSP e MIDI limitato (nessuna IA) ---
+            st.markdown("---")
+            with st.expander("📦 Esporta Stem e MIDI (DSP puro, nessuna IA)"):
+                st.caption(
+                    "Non è separazione vocale/strumentale vera (richiederebbe un modello IA "
+                    "tipo Spleeter/Demucs): sono scomposizioni DSP dell'audio ORIGINALE — "
+                    "armonico/percussivo (HPSS) e bande di frequenza — più un MIDI limitato "
+                    "a una linea melodica monofonica (pYIN) e alla griglia ritmica."
+                )
+
+                stem_col1, stem_col2 = st.columns(2)
+
+                with stem_col1:
+                    st.markdown("**Pseudo-Stem Armonico/Percussivo (HPSS)**")
+                    if st.button("🎼 Genera Stem Armonico + Percussivo", use_container_width=True, key="gen_hpss_stems"):
+                        with st.spinner("Separazione armonica/percussiva (HPSS)..."):
+                            try:
+                                y_harm, y_perc = librosa.effects.hpss(original_audio)
+                                st.session_state['stem_harmonic'] = y_harm
+                                st.session_state['stem_percussive'] = y_perc
+                                st.success("Stem armonico/percussivo generati.")
+                            except Exception as e:
+                                st.error(f"Separazione HPSS fallita: {e}")
+
+                    if 'stem_harmonic' in st.session_state:
+                        harm_buf = io.BytesIO()
+                        sf.write(harm_buf, st.session_state['stem_harmonic'], sr, format='WAV')
+                        st.download_button("⬇️ Scarica Stem Armonico", data=harm_buf.getvalue(),
+                                            file_name=f"{uploaded_file.name.split('.')[0]}_stem_armonico.wav",
+                                            mime="audio/wav", use_container_width=True, key="dl_harm")
+                        perc_buf = io.BytesIO()
+                        sf.write(perc_buf, st.session_state['stem_percussive'], sr, format='WAV')
+                        st.download_button("⬇️ Scarica Stem Percussivo", data=perc_buf.getvalue(),
+                                            file_name=f"{uploaded_file.name.split('.')[0]}_stem_percussivo.wav",
+                                            mime="audio/wav", use_container_width=True, key="dl_perc")
+
+                with stem_col2:
+                    st.markdown("**Pseudo-Stem in Bande (Bassi/Medi/Alti)**")
+                    if st.button("🎚️ Genera Stem in 3 Bande", use_container_width=True, key="gen_band_stems"):
+                        with st.spinner("Separazione in bande di frequenza..."):
+                            try:
+                                low, mid, high = split_bands(original_audio, sr)
+                                st.session_state['stem_low'] = low
+                                st.session_state['stem_mid'] = mid
+                                st.session_state['stem_high'] = high
+                                st.success("Stem in 3 bande generati.")
+                            except Exception as e:
+                                st.error(f"Separazione in bande fallita: {e}")
+
+                    if 'stem_low' in st.session_state:
+                        for band_key, band_label in [('stem_low', 'Bassi'), ('stem_mid', 'Medi'), ('stem_high', 'Alti')]:
+                            band_buf = io.BytesIO()
+                            sf.write(band_buf, st.session_state[band_key], sr, format='WAV')
+                            st.download_button(f"⬇️ Scarica Stem {band_label}", data=band_buf.getvalue(),
+                                                file_name=f"{uploaded_file.name.split('.')[0]}_stem_{band_label.lower()}.wav",
+                                                mime="audio/wav", use_container_width=True, key=f"dl_{band_key}")
+
+                st.markdown("---")
+                st.markdown("**MIDI Limitato (melodia mono pYIN + ritmo beat)**")
+                if not PRETTY_MIDI_AVAILABLE:
+                    st.warning("Libreria `pretty_midi` non disponibile in questo ambiente: aggiungila a requirements.txt per abilitare l'export MIDI.")
+                else:
+                    if st.button("🎹 Genera MIDI", use_container_width=True, key="gen_midi"):
+                        with st.spinner("Pitch-tracking (pYIN) e costruzione MIDI (max primi 60s)..."):
+                            source_for_midi = st.session_state.get('stem_harmonic', original_audio)
+                            pm = audio_to_midi_monophonic(source_for_midi, sr, tempo=metadata['tempo'], beats=metadata['beats'])
+                            if pm is not None:
+                                midi_buf = io.BytesIO()
+                                pm.write(midi_buf)
+                                st.session_state['midi_bytes'] = midi_buf.getvalue()
+                                st.success("MIDI generato.")
+                            else:
+                                st.error("Generazione MIDI fallita (audio troppo corto o errore interno).")
+
+                    if 'midi_bytes' in st.session_state:
+                        st.download_button("⬇️ Scarica MIDI", data=st.session_state['midi_bytes'],
+                                            file_name=f"{uploaded_file.name.split('.')[0]}_melodia_ritmo.mid",
+                                            mime="audio/midi", use_container_width=True, key="dl_midi")
 
 
             # --- Sintesi Artistica e Grafici (usano l'audio scaricato più di recente) ---
